@@ -140,4 +140,15 @@ public class DataSourceController extends BaseController {
             return fail(500, "测试数据源连接失败：" + e.getMessage());
         }
     }
+
+    @GetMapping("/list")
+    public Result<List<DataSourceEntity>> list() {
+        try {
+            List<DataSourceEntity> list = dataSourceService.list();
+            return success(list, "数据源列表查询成功");
+        } catch (Exception e) {
+            log.error("查询数据源列表失败", e);
+            return fail(500, "查询数据源列表失败：" + e.getMessage());
+        }
+    }
 }

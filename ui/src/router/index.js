@@ -12,6 +12,12 @@ const routes = [
         meta: { title: '登录' }
     },
     {
+        path: '/datasource',
+        name: 'DataSourceManagement',
+        component: () => import('@/views/data-source/DataSourceManagement.vue'),
+        meta: { title: '数据源管理', icon: 'Connection' }
+    },
+    {
         path: '/',
         component: Layout,
         redirect: '/dashboard',
@@ -21,6 +27,12 @@ const routes = [
                 name: 'Dashboard',
                 component: () => import('@/views/dashboard/Dashboard.vue'),
                 meta: { title: '首页', icon: 'el-icon-s-home' }
+            },
+            {
+                path: 'datasource',
+                name: 'DataSourceManagement',
+                component: () => import('@/views/data-source/DataSourceManagement.vue'),
+                meta: { title: '数据源管理', icon: 'Connection' }
             }
         ]
     },
