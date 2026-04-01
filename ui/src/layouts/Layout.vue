@@ -1,43 +1,57 @@
 <template>
-  <div class="admin-layout">
-    <el-aside width="220px" class="sidebar">
-      <el-menu
-        :default-active="route.path"
-        class="sidebar-menu"
-        router
-      >
-        <el-menu-item index="/dashboard">
-          <el-icon><House /></el-icon>
-          <template #title>首页</template>
-        </el-menu-item>
+  <div>
+    <!-- 当进入新建流程设计（id === 'new'）时，渲染全屏视图，隐藏侧栏与头部 -->
+    <div v-if="isFullScreen" class="full-screen-wrapper">
+      <router-view />
+    </div>
 
-        <el-menu-item index="/datasource">
-          <el-icon><Connection /></el-icon>
-          <template #title>数据源管理</template>
-        </el-menu-item>
-      </el-menu>
-    </el-aside>
+    <div v-else class="admin-layout">
+      <el-aside width="220px" class="sidebar">
+        <el-menu
+          :default-active="route.path"
+          class="sidebar-menu"
+          router
+        >
+          <el-menu-item index="/dashboard">
+            <el-icon><House /></el-icon>
+            <template #title>首页</template>
+          </el-menu-item>
 
-    <el-container>
-      <el-header class="header">
-        <el-button type="text" @click="logout">退出登录</el-button>
-      </el-header>
+          <el-menu-item index="/datasource">
+            <el-icon><Connection /></el-icon>
+            <template #title>数据源管理</template>
+          </el-menu-item>
 
-      <el-main class="main-content">
-        <div class="content-panel">
-          <router-view />
-        </div>
-      </el-main>
-    </el-container>
+          <el-menu-item index="/workflow/definition">
+            <el-icon><Files /></el-icon>
+            <template #title>流程定义</template>
+          </el-menu-item>
+        </el-menu>
+      </el-aside>
+
+      <el-container>
+        <el-header class="header">
+          <el-button type="text" @click="logout">退出登录</el-button>
+        </el-header>
+
+        <el-main class="main-content">
+          <div class="content-panel">
+            <router-view />
+          </div>
+        </el-main>
+      </el-container>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { House, Connection } from '@element-plus/icons-vue'
+import { House, Connection, Files } from '@element-plus/icons-vue'
 import { useRoute, useRouter } from 'vue-router'
+import { computed } from 'vue'
 
 const router = useRouter()
 const route = useRoute()
+const isFullScreen = computed(() => route.name === 'WorkflowDesigner' && String(route.params?.id || '') === 'new')
 
 const logout = () => {
   localStorage.removeItem('token')
@@ -94,5 +108,11 @@ const logout = () => {
     box-sizing: border-box;
     overflow: auto;
   }
+}
+
+.full-screen-wrapper {
+  height: 100vh;
+  width: 100%;
+  background: #fff;
 }
 </style>

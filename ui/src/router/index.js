@@ -33,6 +33,18 @@ const routes = [
                 name: 'DataSourceManagement',
                 component: () => import('@/views/data-source/DataSourceManagement.vue'),
                 meta: { title: '数据源管理', icon: 'Connection' }
+            },
+            {
+                path: 'workflow/definition',
+                name: 'WorkflowDefinitionManagement',
+                component: () => import('@/views/workflow-definition/WorkflowDefinitionManagement.vue'),
+                meta: { title: '流程定义', icon: 'Files' }
+            },
+            {
+                path: 'workflow/definition/design/:id',
+                name: 'WorkflowDesigner',
+                component: () => import('@/views/workflow-design/WorkflowDesigner.vue'),
+                meta: { title: '流程设计', hidden: true }
             }
         ]
     },
