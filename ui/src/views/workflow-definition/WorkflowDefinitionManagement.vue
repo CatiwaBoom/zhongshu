@@ -34,8 +34,8 @@
         <div>
           <h2>流程定义列表</h2>
           <p>字段映射 ProcessDefinitionEntity</p>
-        </div>
-        <div class="list-total">共 {{ filteredList.length }} 条</div>
+              </div>
+                    <div class="list-total">共 {{ total }} 条</div>
       </div>
 
       <div v-loading="loading" class="list-body">
@@ -87,15 +87,15 @@
         <el-empty v-else description="暂无流程定义" />
       </div>
 
-      <div class="list-footer" v-if="filteredList.length">
-        <div class="footer-text">显示 {{ pageStart }}-{{ pageEnd }} 条，共 {{ filteredList.length }} 条</div>
+      <div class="list-footer" v-if="total">
+        <div class="footer-text">显示 {{ pageStart }}-{{ pageEnd }} 条，共 {{ total }} 条</div>
         <el-pagination
           background
           small
           layout="prev, pager, next"
           :current-page="query.current"
           :page-size="query.size"
-          :total="filteredList.length"
+          :total="total"
           @current-change="handlePageChange"
         />
       </div>
@@ -188,6 +188,7 @@ const query = reactive({
 })
 
 const list = ref([])
+const total = ref(0)
 
 const emptyForm = () => ({
   id: '',
@@ -212,35 +213,21 @@ watch(
   }
 )
 
-const filteredList = computed(() => {
-  const keyword = query.keyword.trim().toLowerCase()
+const filteredList = computed(() => list.value)
 
-  return list.value.filter((item) => {
-    const text = [item.code, item.name, item.remark].filter(Boolean).join(' ').toLowerCase()
-    const matchKeyword = !keyword || text.includes(keyword)
-    const matchStatus = query.status === undefined || Number(item.status) === Number(query.status)
-    const matchLatest = query.latestOnly === undefined || Number(item.isLatest) === Number(query.latestOnly)
-    return matchKeyword && matchStatus && matchLatest
-  })
+watch([() => query.keyword, () => query.status, () => query.latestOnly], () => {
+  query.current = 1
+  loadList()
 })
 
-watch(filteredList, (value) => {
-  const maxPage = Math.max(1, Math.ceil(value.length / query.size))
-  if (query.current > maxPage) {
-    query.current = maxPage
-  }
-})
+const pagedList = computed(() => list.value)
 
-const pagedList = computed(() => {
-  const start = (query.current - 1) * query.size
-  return filteredList.value.slice(start, start + query.size)
-})
-
-const pageStart = computed(() => (filteredList.value.length ? (query.current - 1) * query.size + 1 : 0))
-const pageEnd = computed(() => Math.min(query.current * query.size, filteredList.value.length))
+const pageStart = computed(() => (total.value ? (query.current - 1) * query.size + 1 : 0))
+const pageEnd = computed(() => Math.min(query.current * query.size, total.value))
 
 const handlePageChange = (page) => {
   query.current = page
+  loadList()
 }
 
 const resetForm = () => {
@@ -261,10 +248,18 @@ const openEditDialog = (row) => {
 const loadList = async () => {
   loading.value = true
   try {
-    const res = await getProcessDefinitionList()
+    const params = {
+      keyword: query.keyword || undefined,
+      status: query.status !== undefined ? query.status : undefined,
+      latestOnly: query.latestOnly !== undefined ? query.latestOnly : undefined,
+      page: query.current,
+      size: query.size
+    }
+    const res = await getProcessDefinitionList(params)
     const result = res.data
-    if (result?.code === 200 && Array.isArray(result.data)) {
-      list.value = result.data
+    if (result?.code === 200 && result.data) {
+      list.value = result.data.records || []
+      total.value = result.data.total || 0
     } else {
       ElMessage.error(result?.msg || '获取流程定义失败')
     }
