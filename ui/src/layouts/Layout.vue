@@ -22,6 +22,11 @@
             <template #title>数据源管理</template>
           </el-menu-item>
 
+          <el-menu-item index="/user">
+            <el-icon><Files /></el-icon>
+            <template #title>用户管理</template>
+          </el-menu-item>
+
           <el-menu-item index="/workflow/definition">
             <el-icon><Files /></el-icon>
             <template #title>流程定义</template>

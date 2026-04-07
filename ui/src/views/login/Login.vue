@@ -77,29 +77,42 @@ const handleLogin = async () => {
   if (!valid) return
 
   loading.value = true
-  try {
-    const res = await request.post('/user/login', {
-      username: form.username,
-      password: form.password
-    })
+    try {
+      // Use /auth/login which returns accessToken + refresh info
+      const res = await request.post('/auth/login', {
+        username: form.username,
+        password: form.password,
+        deviceId: 'web'
+      })
 
-    const result = res.data
-    if (result && (result.code === 200 || result.code === 0)) {
-      const token = result.data?.token || 'fake-token-123456'
-      localStorage.setItem('token', token)
-      if (result.data?.username) {
-        localStorage.setItem('username', result.data.username)
+      const data = res.data
+      // AuthController returns LoginResponse (not wrapped), but when proxied it may be inside data
+      const accessToken = data?.accessToken || data?.data?.accessToken
+      if (accessToken) {
+        localStorage.setItem('token', accessToken)
+        localStorage.setItem('username', form.username)
+        ElMessage.success('登录成功')
+        router.push('/dashboard')
+      } else {
+        // fallback: handle older /user/login wrapped response
+        const wrapped = data
+        if (wrapped && (wrapped.code === 200 || wrapped.code === 0)) {
+          const token = wrapped.data?.token || wrapped.data?.accessToken
+          if (token) {
+            localStorage.setItem('token', token)
+            if (wrapped.data?.username) localStorage.setItem('username', wrapped.data.username)
+            ElMessage.success('登录成功')
+            router.push('/dashboard')
+            return
+          }
+        }
+        ElMessage.error('登录失败：未返回访问令牌')
       }
-      ElMessage.success(result.message || '登录成功')
-      router.push('/dashboard')
-    } else {
-      ElMessage.error(result?.message || '登录失败')
+    } catch (error) {
+      ElMessage.error(error?.response?.data?.message || error?.response?.data?.msg || '登录请求失败')
+    } finally {
+      loading.value = false
     }
-  } catch (error) {
-    ElMessage.error(error?.response?.data?.message || '登录请求失败')
-  } finally {
-    loading.value = false
-  }
 }
 </script>
 

@@ -6,7 +6,7 @@ import lombok.Data;
 import org.cycle.common.entity.BaseEntity;
 
 @Data
-@TableName("data_source")
+@TableName("sys_data_source")
 public class DataSourceEntity extends BaseEntity {
     /**
      * 数据源名称

@@ -12,7 +12,6 @@
       <div class="header-actions">
         <el-button v-if="isNewDefinition" @click="onBack">返回</el-button>
         <el-button @click="saveDesign">保存</el-button>
-        <el-button type="primary" @click="runProcess">运行流程</el-button>
       </div>
     </header>
 
@@ -38,15 +37,20 @@
         <div
           ref="canvasRef"
           class="flow-canvas"
-          @dragover.prevent
+          @dragover.prevent="onCanvasDragOver"
           @drop="onDrop"
           @click="clearSelection"
         >
-          <div class="flow-viewport" :style="viewportStyle">
+            <div class="flow-viewport" ref="viewportRef" :style="viewportStyle">
             <svg class="line-layer">
               <defs>
-                <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
-                  <path d="M0,0 L0,6 L9,3 z" fill="#165dff" />
+                <!--
+                  使用 userSpaceOnUse 保证在 CSS transform(scale) 下箭头方向与大小稳定，
+                  调整 refX/refY 与路径使箭头正确位于折线/直线末端。
+                -->
+                <marker id="arrow" markerWidth="12" markerHeight="12" refX="11" refY="6" orient="auto" markerUnits="userSpaceOnUse">
+                  <!-- 三角形箭头，默认填充与连线颜色一致 -->
+                  <path d="M0 0 L12 6 L0 12 L3 6 z" fill="#165dff" />
                 </marker>
               </defs>
               <line
@@ -61,17 +65,65 @@
                 marker-end="url(#arrow)"
                 @click.stop="selectConnection(line.id)"
               />
+
+              <!-- temporary dragging connection while creating a new link -->
+              <line
+                v-if="draggingConnection.active"
+                :x1="draggingConnection.x1"
+                :y1="draggingConnection.y1"
+                :x2="draggingConnection.x2"
+                :y2="draggingConnection.y2"
+                class="flow-line"
+                style="stroke-dasharray:6; opacity:0.8"
+                marker-end="url(#arrow)"
+              />
             </svg>
 
             <div
               v-for="node in nodes"
               :key="node.id"
               class="flow-node"
-              :class="[`flow-node--${node.type}`, { 'is-selected': selectedNodeId === node.id, 'is-link-source': linkingFromId === node.id }]"
+              :class="[`flow-node--${node.type}`, { 'is-selected': selectedNodeId === node.id }]"
               :style="nodeStyle(node)"
               @mousedown.stop="startDrag(node, $event)"
               @click.stop="selectNode(node)"
             >
+              <!-- connection ports: top(0), right(1), bottom(2), left(3) -->
+              <div class="node-ports">
+                <div
+                  class="node-port node-port--top"
+                  draggable="true"
+                  @dragstart.stop.prevent="onPortDragStart($event, node.id, 0)"
+                  @dragend.stop="onPortDragEnd"
+                  @dragover.prevent
+                  @drop.stop.prevent="onPortDrop($event, node.id, 0)"
+                ></div>
+                <div
+                  class="node-port node-port--right"
+                  draggable="true"
+                  @dragstart.stop.prevent="onPortDragStart($event, node.id, 1)"
+                  @dragend.stop="onPortDragEnd"
+                  @dragover.prevent
+                  @drop.stop.prevent="onPortDrop($event, node.id, 1)"
+                ></div>
+                <div
+                  class="node-port node-port--bottom"
+                  draggable="true"
+                  @dragstart.stop.prevent="onPortDragStart($event, node.id, 2)"
+                  @dragend.stop="onPortDragEnd"
+                  @dragover.prevent
+                  @drop.stop.prevent="onPortDrop($event, node.id, 2)"
+                ></div>
+                <div
+                  class="node-port node-port--left"
+                  draggable="true"
+                  @dragstart.stop.prevent="onPortDragStart($event, node.id, 3)"
+                  @dragend.stop="onPortDragEnd"
+                  @dragover.prevent
+                  @drop.stop.prevent="onPortDrop($event, node.id, 3)"
+                ></div>
+              </div>
+
               <div class="flow-node__title">{{ node.name }}</div>
               <div class="flow-node__meta">{{ node.status }}</div>
             </div>
@@ -85,8 +137,6 @@
           <el-button circle @click="zoomOut"><el-icon><ZoomOut /></el-icon></el-button>
           <el-button circle @click="resetView"><el-icon><RefreshRight /></el-icon></el-button>
         </div>
-
-        <div class="canvas-tip">提示：单击一个节点，再单击另一个节点可建立连线。</div>
       </section>
 
       <aside class="property-panel" :class="{ 'is-open': panelOpen }">
@@ -157,6 +207,7 @@ import { getProcessDefinitionDesign, saveProcessDefinitionDesign, publishProcess
 const route = useRoute()
 const router = useRouter()
 const canvasRef = ref(null)
+const viewportRef = ref(null)
 
 const NODE_WIDTH = 180
 const NODE_HEIGHT = 72
@@ -179,7 +230,9 @@ const nodes = ref([])
 const connections = ref([])
 const selectedNodeId = ref('')
 const selectedConnectionId = ref('')
-const linkingFromId = ref('')
+
+// draggingConnection handles temporary connection drawn while dragging from a port
+const draggingConnection = reactive({ active: false, fromId: '', fromPort: null, x1: 0, y1: 0, x2: 0, y2: 0, isMouse: false })
 const panelOpen = ref(false)
 const scale = ref(1)
 const nodeSeq = ref(1)
@@ -199,6 +252,7 @@ const dragState = reactive({
   originY: 0,
   moving: false
 })
+const lastDragAt = ref(0)
 
 const viewportStyle = computed(() => ({
   transform: `scale(${scale.value})`,
@@ -265,31 +319,30 @@ const nodeCenter = (nodeId) => {
   }
 }
 
+const portCenter = (nodeId, portIndex) => {
+  const node = nodes.value.find((item) => item.id === nodeId)
+  if (!node) return { x: 0, y: 0 }
+  const centerX = node.x + NODE_WIDTH / 2
+  const centerY = node.y + NODE_HEIGHT / 2
+  if (portIndex === 0) return { x: centerX, y: node.y }
+  if (portIndex === 1) return { x: node.x + NODE_WIDTH, y: centerY }
+  if (portIndex === 2) return { x: centerX, y: node.y + NODE_HEIGHT }
+  if (portIndex === 3) return { x: node.x, y: centerY }
+  // fallback to center
+  return { x: centerX, y: centerY }
+}
+
 const linePosition = (line) => {
-  const from = nodeCenter(line.from)
-  const to = nodeCenter(line.to)
+  const from = line.fromPort !== undefined ? portCenter(line.from, line.fromPort) : nodeCenter(line.from)
+  const to = line.toPort !== undefined ? portCenter(line.to, line.toPort) : nodeCenter(line.to)
   return { x1: from.x, y1: from.y, x2: to.x, y2: to.y }
 }
 
-const hasConnection = (fromId, toId) => connections.value.some((line) => line.from === fromId && line.to === toId)
+const hasConnection = (fromId, fromPort, toId, toPort) => connections.value.some((line) => line.from === fromId && (line.fromPort === fromPort || (line.fromPort === undefined && fromPort === undefined)) && line.to === toId && (line.toPort === toPort || (line.toPort === undefined && toPort === undefined)))
 
 const selectNode = (node) => {
   selectedConnectionId.value = ''
-
-  if (linkingFromId.value && linkingFromId.value !== node.id) {
-    if (!hasConnection(linkingFromId.value, node.id)) {
-      connections.value.push({
-        id: `line-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
-        from: linkingFromId.value,
-        to: node.id
-      })
-      ElMessage.success('已建立连线')
-    }
-    linkingFromId.value = ''
-  } else {
-    linkingFromId.value = node.id
-  }
-
+  // selection only
   selectedNodeId.value = node.id
   editForm.name = node.name
   editForm.desc = node.desc
@@ -298,23 +351,81 @@ const selectNode = (node) => {
   panelOpen.value = true
 }
 
+// Port drag/drop handlers
+const onPortDragStart = (event, nodeId, portIndex) => {
+  // mark as port drag
+  try {
+    event.dataTransfer.setData('text/port', JSON.stringify({ fromId: nodeId, fromPort: portIndex }))
+  } catch (e) {
+    // some browsers may restrict, still proceed
+    event.dataTransfer.setData('text/plain', `port:${nodeId}:${portIndex}`)
+  }
+
+  const p = portCenter(nodeId, portIndex)
+  draggingConnection.active = true
+  draggingConnection.fromId = nodeId
+  draggingConnection.fromPort = portIndex
+  draggingConnection.x1 = p.x
+  draggingConnection.y1 = p.y
+  draggingConnection.x2 = p.x
+  draggingConnection.y2 = p.y
+}
+
+const onPortDragEnd = () => {
+  draggingConnection.active = false
+  draggingConnection.fromId = ''
+  draggingConnection.fromPort = null
+}
+
+const onCanvasDragOver = (event) => {
+  if (!draggingConnection.active) return
+  const rect = canvasRef.value.getBoundingClientRect()
+  // compute coordinates inside viewport (account for scale)
+  draggingConnection.x2 = (event.clientX - (rect?.left || 0)) / scale.value
+  draggingConnection.y2 = (event.clientY - (rect?.top || 0)) / scale.value
+}
+
+const onPortDrop = (event, toNodeId, toPortIndex) => {
+  // read source
+  let payload = null
+  try {
+    const raw = event.dataTransfer.getData('text/port')
+    if (raw) payload = JSON.parse(raw)
+  } catch (e) {
+    const raw = event.dataTransfer.getData('text/plain')
+    if (raw && raw.startsWith('port:')) {
+      const parts = raw.split(':')
+      payload = { fromId: parts[1], fromPort: Number(parts[2]) }
+    }
+  }
+  onPortDragEnd()
+  if (!payload) return
+  const { fromId, fromPort } = payload
+  if (fromId === toNodeId && fromPort === toPortIndex) return
+
+  if (hasConnection(fromId, fromPort, toNodeId, toPortIndex)) {
+    ElMessage.info('连线已存在')
+    return
+  }
+
+  connections.value.push({ id: `line-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`, from: fromId, fromPort, to: toNodeId, toPort: toPortIndex })
+  ElMessage.success('已建立连线')
+}
+
 const selectConnection = (lineId) => {
   selectedConnectionId.value = lineId
   selectedNodeId.value = ''
-  linkingFromId.value = ''
   panelOpen.value = false
 }
 
 const clearSelection = () => {
   selectedNodeId.value = ''
   selectedConnectionId.value = ''
-  linkingFromId.value = ''
   panelOpen.value = false
 }
 
 const closePanel = () => {
   panelOpen.value = false
-  linkingFromId.value = ''
 }
 
 const saveNodeConfig = () => {
@@ -346,7 +457,6 @@ const deleteSelected = () => {
     connections.value = connections.value.filter((line) => line.from !== nodeId && line.to !== nodeId)
     selectedNodeId.value = ''
     panelOpen.value = false
-    linkingFromId.value = ''
     ElMessage.success('已删除节点')
   }
 }
@@ -364,6 +474,26 @@ const resetView = () => {
 }
 
 const startDrag = (node, event) => {
+  // If the mousedown started from a port, start a port drag instead of node drag
+  if (event.target && event.target.classList && event.target.classList.contains('node-port')) {
+    // determine which port based on modifier class
+    const cls = event.target.classList
+    let portIndex = 0
+    if (cls.contains('node-port--top')) portIndex = 0
+    else if (cls.contains('node-port--right')) portIndex = 1
+    else if (cls.contains('node-port--bottom')) portIndex = 2
+    else if (cls.contains('node-port--left')) portIndex = 3
+    startPortMouseDrag(node.id, portIndex, event)
+    return
+  }
+
+  // If the mousedown is near a port area on the node, start a mouse-based port drag
+  const maybePort = hitTestPort(node, event.clientX, event.clientY)
+  if (maybePort !== -1) {
+    startPortMouseDrag(node.id, maybePort, event)
+    return
+  }
+
   dragState.nodeId = node.id
   dragState.startX = event.clientX
   dragState.startY = event.clientY
@@ -372,23 +502,129 @@ const startDrag = (node, event) => {
   dragState.moving = true
 }
 
+// find a port under client coordinates; returns { nodeId, portIndex, portPos } or null
+const findPortUnderClient = (clientX, clientY) => {
+  if (!viewportRef.value && !canvasRef.value) return null
+  const rect = (viewportRef.value && viewportRef.value.getBoundingClientRect && viewportRef.value.getBoundingClientRect()) || (canvasRef.value && canvasRef.value.getBoundingClientRect && canvasRef.value.getBoundingClientRect())
+  const thresholdBase = 12
+  const thr = thresholdBase * Math.max(1, scale.value)
+
+  for (const node of nodes.value) {
+    for (let i = 0; i < 4; i++) {
+      const p = portCenter(node.id, i)
+      const px = (rect?.left || 0) + p.x * scale.value
+      const py = (rect?.top || 0) + p.y * scale.value
+      const dx = clientX - px
+      const dy = clientY - py
+      if (dx * dx + dy * dy <= thr * thr) {
+        return { nodeId: node.id, portIndex: i, portPos: p }
+      }
+    }
+  }
+  return null
+}
+
+// small adapter kept for legacy usage: test a specific node
+const hitTestPort = (node, clientX, clientY) => {
+  const found = findPortUnderClient(clientX, clientY)
+  if (!found) return -1
+  return found.nodeId === node.id ? found.portIndex : -1
+}
+
+const startPortMouseDrag = (nodeId, portIndex, event) => {
+  const p = portCenter(nodeId, portIndex)
+  draggingConnection.active = true
+  draggingConnection.isMouse = true
+  draggingConnection.fromId = nodeId
+  draggingConnection.fromPort = portIndex
+  draggingConnection.x1 = p.x
+  draggingConnection.y1 = p.y
+  // initial mouse position
+  const rect = (viewportRef.value && viewportRef.value.getBoundingClientRect && viewportRef.value.getBoundingClientRect()) || (canvasRef.value && canvasRef.value.getBoundingClientRect && canvasRef.value.getBoundingClientRect())
+  draggingConnection.x2 = (event.clientX - (rect?.left || 0)) / scale.value
+  draggingConnection.y2 = (event.clientY - (rect?.top || 0)) / scale.value
+}
+
 const onMouseMove = (event) => {
-  if (!dragState.moving) return
-  const node = nodes.value.find((item) => item.id === dragState.nodeId)
-  if (!node) return
+  // If a node is being dragged, move it
+  if (dragState.moving) {
+    const node = nodes.value.find((item) => item.id === dragState.nodeId)
+    if (!node) return
 
-  const dx = (event.clientX - dragState.startX) / scale.value
-  const dy = (event.clientY - dragState.startY) / scale.value
-  const maxX = Math.max(0, (canvasRef.value?.clientWidth || 1200) - NODE_WIDTH)
-  const maxY = Math.max(0, (canvasRef.value?.clientHeight || 700) - NODE_HEIGHT)
+    const dx = (event.clientX - dragState.startX) / scale.value
+    const dy = (event.clientY - dragState.startY) / scale.value
+    const maxX = Math.max(0, (canvasRef.value?.clientWidth || 1200) - NODE_WIDTH)
+    const maxY = Math.max(0, (canvasRef.value?.clientHeight || 700) - NODE_HEIGHT)
 
-  node.x = clampPos(dragState.originX + dx, maxX)
-  node.y = clampPos(dragState.originY + dy, maxY)
+    node.x = clampPos(dragState.originX + dx, maxX)
+    node.y = clampPos(dragState.originY + dy, maxY)
+    return
+  }
+
+  // If dragging a port with mouse, update temporary line
+  if (draggingConnection.active && draggingConnection.isMouse) {
+    const rect = (viewportRef.value && viewportRef.value.getBoundingClientRect && viewportRef.value.getBoundingClientRect()) || (canvasRef.value && canvasRef.value.getBoundingClientRect && canvasRef.value.getBoundingClientRect())
+    // detect if mouse is over a port and snap to it
+    const found = findPortUnderClient(event.clientX, event.clientY)
+    if (found) {
+      draggingConnection.x2 = found.portPos.x
+      draggingConnection.y2 = found.portPos.y
+    } else {
+      draggingConnection.x2 = (event.clientX - (rect?.left || 0)) / scale.value
+      draggingConnection.y2 = (event.clientY - (rect?.top || 0)) / scale.value
+    }
+  }
 }
 
 const onMouseUp = () => {
-  dragState.moving = false
-  dragState.nodeId = ''
+  // finish node drag
+  if (dragState.moving) {
+    dragState.moving = false
+    dragState.nodeId = ''
+    lastDragAt.value = Date.now()
+    return
+  }
+
+  // finish mouse-based port drag: hit test whether mouse up is over a port
+  if (draggingConnection.active && draggingConnection.isMouse) {
+    // find candidate target node/port
+    const mx = draggingConnection.x2
+    const my = draggingConnection.y2
+
+    let dropped = false
+    for (const node of nodes.value) {
+      for (let pi = 0; pi < 4; pi++) {
+        const p = portCenter(node.id, pi)
+        const dx = (p.x - mx)
+        const dy = (p.y - my)
+        const thr = 14
+        if (dx * dx + dy * dy <= thr * thr) {
+          // attempt create connection
+          const fromId = draggingConnection.fromId
+          const fromPort = draggingConnection.fromPort
+          const toNodeId = node.id
+          const toPortIndex = pi
+          if (!(fromId === toNodeId && fromPort === toPortIndex)) {
+            if (!hasConnection(fromId, fromPort, toNodeId, toPortIndex)) {
+              connections.value.push({ id: `line-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`, from: fromId, fromPort, to: toNodeId, toPort: toPortIndex })
+              ElMessage.success('已建立连线')
+            } else {
+              ElMessage.info('连线已存在')
+            }
+          }
+          dropped = true
+          break
+        }
+      }
+      if (dropped) break
+    }
+
+    // clear dragging state
+    draggingConnection.active = false
+    draggingConnection.isMouse = false
+    draggingConnection.fromId = ''
+    draggingConnection.fromPort = null
+  }
 }
 
 const saveDesign = async () => {
@@ -505,9 +741,7 @@ const doPublish = async () => {
   }
 }
 
-const runProcess = () => {
-  ElMessage.success('流程运行模拟成功（示例）')
-}
+// runProcess removed (button removed).
 
 const onBack = () => {
   // 返回到流程定义列表
@@ -533,9 +767,11 @@ const buildDefaultGraph = () => {
 }
 
 const loadDesign = async () => {
-  // 新建模式直接构建默认图，不去后端请求
+  // 新建模式：保持画布为空，用户可手动拖入节点
   if (isNewDefinition.value) {
-    buildDefaultGraph()
+    nodes.value = []
+    connections.value = []
+    scale.value = 1
     return
   }
 
@@ -784,11 +1020,43 @@ onUnmounted(() => {
   box-shadow: 0 8px 20px rgba(22, 93, 255, 0.08);
   cursor: move;
   user-select: none;
+  z-index: 2; /* above canvas ports */
 }
+
+.node-ports {
+  position: absolute;
+  inset: 0;
+  pointer-events: none; /* allow inner ports to control events */
+  z-index: 0; /* beneath node content visually */
+}
+
+.node-port {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  background: rgba(22, 93, 255, 0.12);
+  border: 2px solid rgba(22, 93, 255, 0.25);
+  border-radius: 50%;
+  pointer-events: auto;
+  z-index: 0;
+}
+
+.node-port.node-port--top { left: 50%; transform: translateX(-50%); top: -7px }
+.node-port.node-port--right { right: -7px; top: 50%; transform: translateY(-50%) }
+.node-port.node-port--bottom { left: 50%; transform: translateX(-50%); bottom: -7px }
+.node-port.node-port--left { left: -7px; top: 50%; transform: translateY(-50%) }
+
+/* Ports remain visually beneath node content; port drag begins via mousedown hit-testing. */
 
 .flow-node__title {
   font-weight: 600;
   color: #2d3648;
+}
+
+.flow-node > .flow-node__title,
+.flow-node > .flow-node__meta {
+  position: relative;
+  z-index: 1; /* ensure node text/content is above ports visually */
 }
 
 .flow-node__meta {

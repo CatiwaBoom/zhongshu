@@ -18,6 +18,12 @@ const routes = [
         meta: { title: '数据源管理', icon: 'Connection' }
     },
     {
+        path: '/user',
+        name: 'UserManagement',
+        component: () => import('@/views/user/UserManagement.vue'),
+        meta: { title: '用户管理', icon: 'User' }
+    },
+    {
         path: '/',
         component: Layout,
         redirect: '/dashboard',
@@ -33,6 +39,12 @@ const routes = [
                 name: 'DataSourceManagement',
                 component: () => import('@/views/data-source/DataSourceManagement.vue'),
                 meta: { title: '数据源管理', icon: 'Connection' }
+            },
+            {
+                path: 'user',
+                name: 'UserManagement',
+                component: () => import('@/views/user/UserManagement.vue'),
+                meta: { title: '用户管理', icon: 'User' }
             },
             {
                 path: 'workflow/definition',
