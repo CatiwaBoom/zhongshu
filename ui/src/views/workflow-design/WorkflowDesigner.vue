@@ -231,7 +231,8 @@ const connections = ref([])
 const selectedNodeId = ref('')
 const selectedConnectionId = ref('')
 
-// draggingConnection handles temporary connection drawn while dragging from a port
+// draggingConnection 用于在从端口拖拽时绘制临时连线（鼠标或拖拽事件）
+// 字段说明：active 是否激活，fromId/fromPort 源端口，x1/y1 起点，x2/y2 终点，isMouse 是否为鼠标拖拽
 const draggingConnection = reactive({ active: false, fromId: '', fromPort: null, x1: 0, y1: 0, x2: 0, y2: 0, isMouse: false })
 const panelOpen = ref(false)
 const scale = ref(1)
@@ -328,7 +329,7 @@ const portCenter = (nodeId, portIndex) => {
   if (portIndex === 1) return { x: node.x + NODE_WIDTH, y: centerY }
   if (portIndex === 2) return { x: centerX, y: node.y + NODE_HEIGHT }
   if (portIndex === 3) return { x: node.x, y: centerY }
-  // fallback to center
+  // 回退到节点中心（当端口索引不合法时）
   return { x: centerX, y: centerY }
 }
 
@@ -342,7 +343,7 @@ const hasConnection = (fromId, fromPort, toId, toPort) => connections.value.some
 
 const selectNode = (node) => {
   selectedConnectionId.value = ''
-  // selection only
+  // 仅用于选择节点并打开属性面板
   selectedNodeId.value = node.id
   editForm.name = node.name
   editForm.desc = node.desc
@@ -351,16 +352,17 @@ const selectNode = (node) => {
   panelOpen.value = true
 }
 
-// Port drag/drop handlers
+// 端口拖拽/放置处理器
 const onPortDragStart = (event, nodeId, portIndex) => {
-  // mark as port drag
+  // 标记为端口拖拽：尝试使用自定义 MIME 类型存储端口信息，若浏览器限制则降级到 text/plain
   try {
     event.dataTransfer.setData('text/port', JSON.stringify({ fromId: nodeId, fromPort: portIndex }))
   } catch (e) {
-    // some browsers may restrict, still proceed
+    // 某些浏览器可能限制，仍兼容降级处理
     event.dataTransfer.setData('text/plain', `port:${nodeId}:${portIndex}`)
   }
 
+  // 初始化临时连线位置（起点为端口中心）
   const p = portCenter(nodeId, portIndex)
   draggingConnection.active = true
   draggingConnection.fromId = nodeId
@@ -380,13 +382,13 @@ const onPortDragEnd = () => {
 const onCanvasDragOver = (event) => {
   if (!draggingConnection.active) return
   const rect = canvasRef.value.getBoundingClientRect()
-  // compute coordinates inside viewport (account for scale)
+  // 计算视口内坐标（考虑当前缩放），用于更新临时连线终点
   draggingConnection.x2 = (event.clientX - (rect?.left || 0)) / scale.value
   draggingConnection.y2 = (event.clientY - (rect?.top || 0)) / scale.value
 }
 
 const onPortDrop = (event, toNodeId, toPortIndex) => {
-  // read source
+  // 读取拖拽来源（优先读取自定义 MIME text/port，降级兼容 text/plain）
   let payload = null
   try {
     const raw = event.dataTransfer.getData('text/port')
@@ -408,6 +410,7 @@ const onPortDrop = (event, toNodeId, toPortIndex) => {
     return
   }
 
+  // 创建新的连线对象并加入集合
   connections.value.push({ id: `line-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`, from: fromId, fromPort, to: toNodeId, toPort: toPortIndex })
   ElMessage.success('已建立连线')
 }
@@ -474,9 +477,9 @@ const resetView = () => {
 }
 
 const startDrag = (node, event) => {
-  // If the mousedown started from a port, start a port drag instead of node drag
+  // 如果按下来自端口，启用端口拖拽而不是节点拖拽
   if (event.target && event.target.classList && event.target.classList.contains('node-port')) {
-    // determine which port based on modifier class
+    // 根据 class 判断具体端口索引
     const cls = event.target.classList
     let portIndex = 0
     if (cls.contains('node-port--top')) portIndex = 0
@@ -487,7 +490,7 @@ const startDrag = (node, event) => {
     return
   }
 
-  // If the mousedown is near a port area on the node, start a mouse-based port drag
+  // 如果按下位置靠近端口区域，使用鼠标开启端口拖拽（便于精确拖拽）
   const maybePort = hitTestPort(node, event.clientX, event.clientY)
   if (maybePort !== -1) {
     startPortMouseDrag(node.id, maybePort, event)
@@ -502,7 +505,8 @@ const startDrag = (node, event) => {
   dragState.moving = true
 }
 
-// find a port under client coordinates; returns { nodeId, portIndex, portPos } or null
+// 查找给定 client 坐标下的端口；返回 { nodeId, portIndex, portPos } 或 null
+// 说明：函数会考虑当前视口缩放与画布位置，用于鼠标拖拽时的吸附判断
 const findPortUnderClient = (clientX, clientY) => {
   if (!viewportRef.value && !canvasRef.value) return null
   const rect = (viewportRef.value && viewportRef.value.getBoundingClientRect && viewportRef.value.getBoundingClientRect()) || (canvasRef.value && canvasRef.value.getBoundingClientRect && canvasRef.value.getBoundingClientRect())
@@ -524,7 +528,7 @@ const findPortUnderClient = (clientX, clientY) => {
   return null
 }
 
-// small adapter kept for legacy usage: test a specific node
+// 兼容适配：检测指定节点上的端口（返回端口索引或 -1）
 const hitTestPort = (node, clientX, clientY) => {
   const found = findPortUnderClient(clientX, clientY)
   if (!found) return -1
@@ -539,14 +543,14 @@ const startPortMouseDrag = (nodeId, portIndex, event) => {
   draggingConnection.fromPort = portIndex
   draggingConnection.x1 = p.x
   draggingConnection.y1 = p.y
-  // initial mouse position
+  // 初始鼠标位置（用于基于鼠标的端口拖拽）
   const rect = (viewportRef.value && viewportRef.value.getBoundingClientRect && viewportRef.value.getBoundingClientRect()) || (canvasRef.value && canvasRef.value.getBoundingClientRect && canvasRef.value.getBoundingClientRect())
   draggingConnection.x2 = (event.clientX - (rect?.left || 0)) / scale.value
   draggingConnection.y2 = (event.clientY - (rect?.top || 0)) / scale.value
 }
 
 const onMouseMove = (event) => {
-  // If a node is being dragged, move it
+  // 如果正在拖动节点，则移动节点（支持缩放后的坐标转换和边界限制）
   if (dragState.moving) {
     const node = nodes.value.find((item) => item.id === dragState.nodeId)
     if (!node) return
@@ -561,10 +565,10 @@ const onMouseMove = (event) => {
     return
   }
 
-  // If dragging a port with mouse, update temporary line
+  // 如果在拖拽端口，更新临时连线位置（并尝试吸附到端口）
   if (draggingConnection.active && draggingConnection.isMouse) {
     const rect = (viewportRef.value && viewportRef.value.getBoundingClientRect && viewportRef.value.getBoundingClientRect()) || (canvasRef.value && canvasRef.value.getBoundingClientRect && canvasRef.value.getBoundingClientRect())
-    // detect if mouse is over a port and snap to it
+    // 检测鼠标是否在端口上；若在则把临时连线吸附到该端口位置，提升交互体验
     const found = findPortUnderClient(event.clientX, event.clientY)
     if (found) {
       draggingConnection.x2 = found.portPos.x
@@ -577,7 +581,7 @@ const onMouseMove = (event) => {
 }
 
 const onMouseUp = () => {
-  // finish node drag
+  // 完成节点拖动
   if (dragState.moving) {
     dragState.moving = false
     dragState.nodeId = ''
@@ -585,9 +589,9 @@ const onMouseUp = () => {
     return
   }
 
-  // finish mouse-based port drag: hit test whether mouse up is over a port
+  // 完成基于鼠标的端口拖拽：检测鼠标抬起是否位于端口上
   if (draggingConnection.active && draggingConnection.isMouse) {
-    // find candidate target node/port
+    // 查找候选目标节点/端口
     const mx = draggingConnection.x2
     const my = draggingConnection.y2
 
@@ -599,7 +603,7 @@ const onMouseUp = () => {
         const dy = (p.y - my)
         const thr = 14
         if (dx * dx + dy * dy <= thr * thr) {
-          // attempt create connection
+          // 尝试创建连线
           const fromId = draggingConnection.fromId
           const fromPort = draggingConnection.fromPort
           const toNodeId = node.id
@@ -619,7 +623,7 @@ const onMouseUp = () => {
       if (dropped) break
     }
 
-    // clear dragging state
+    // 清理拖拽状态
     draggingConnection.active = false
     draggingConnection.isMouse = false
     draggingConnection.fromId = ''
@@ -653,7 +657,7 @@ const saveDesign = async () => {
   openPublishDialog()
 }
 
-// Publish dialog state and handlers
+// 发布对话框状态与处理器
 const publishDialogVisible = ref(false)
 const publishFormRef = ref(null)
 const publishForm = reactive({
@@ -665,7 +669,7 @@ const publishForm = reactive({
 })
 
 const openPublishDialog = async () => {
-  // try to get next code from backend for preview
+  // 尝试从后端获取下一个可用编码用于预览
   try {
     const res = await getNextDefinitionCode()
     if (res?.data?.code === 200) {
@@ -692,8 +696,8 @@ const doPublish = async () => {
   const valid = await publishFormRef.value.validate().catch(() => false)
   if (!valid) return
 
-  // build nodes for PublishDefinitionRequest
-  // Map visual nodes to minimal NodeDefDTO expected by backend
+  // 为发布请求构建节点 DTO
+  // 将可视化节点映射为后端期望的最小 NodeDefDTO 结构
   const dtos = nodes.value.map((n, idx) => {
     return {
       nodeKey: n.id || `n${idx + 1}`,
@@ -719,7 +723,7 @@ const doPublish = async () => {
       ElMessage.success('流程定义发布成功')
       publishDialogVisible.value = false
 
-      // save design to new definition id
+      // 将设计保存到后端返回的新 definition id
       try {
         const saveRes = await saveProcessDefinitionDesign(newId, { nodes: nodes.value, connections: connections.value, scale: scale.value })
         if (saveRes?.data?.code === 200) {
@@ -731,7 +735,7 @@ const doPublish = async () => {
         ElMessage.error(err?.response?.data?.msg || '设计保存失败')
       }
 
-      // navigate to designer with new id
+      // 导航到带有新 id 的设计器页面
       router.replace({ name: 'WorkflowDesigner', params: { id: newId }, query: { code: publishForm.code, name: publishForm.name, versionNo: 1 } })
       return
     }
@@ -741,7 +745,7 @@ const doPublish = async () => {
   }
 }
 
-// runProcess removed (button removed).
+// 运行流程按钮已移除（功能已删除）。
 
 const onBack = () => {
   // 返回到流程定义列表

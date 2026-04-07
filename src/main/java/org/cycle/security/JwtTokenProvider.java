@@ -24,18 +24,18 @@ public class JwtTokenProvider {
      * 创建访问令牌
      * @param userId 用户id
      * @param username 用户名
-     * @param roles
-     * @param sessionId
-     * @return
+     * @param roles 用户角色列表
+     * @param sessionId 会话 id（jti），用于与后端 session 关联
+     * @return 生成的 JWT access token
      */
     public String createAccessToken(String userId, String username, List<String> roles, String sessionId) {
         // 生成 JWT access token
-        // claims:
-        // - sub: userId
-        // - username
-        // - roles
-        // - jti: sessionId
-        // 注意：生产环境请使用 RS256 并妥善管理私钥
+        // Claims 内容说明：
+        // - sub: 用户 ID
+        // - username: 用户名
+        // - roles: 角色列表
+        // - jti: sessionId（用于将 JWT 与后端会话关联）
+        // 注意：生产环境应优先使用非对称算法（如 RS256）并妥善管理私钥/公钥对
         Date now = new Date();
         Date exp = new Date(now.getTime() + expireSeconds * 1000);
 
@@ -57,8 +57,8 @@ public class JwtTokenProvider {
 
     /**
      * 验证Token
-     * @param token
-     * @return
+     * @param token 要校验的 JWT 字符串
+     * @return 校验结果：true 表示 token 有效且未过期，false 表示无效或已过期
      */
     public boolean validateToken(String token) {
         try {
@@ -68,6 +68,10 @@ public class JwtTokenProvider {
             // token 无效或过期
             return false;
         }
+    }
+
+    public long getExpireSeconds() {
+        return expireSeconds;
     }
 }
 

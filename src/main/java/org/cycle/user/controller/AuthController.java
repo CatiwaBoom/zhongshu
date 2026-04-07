@@ -71,7 +71,7 @@ public class AuthController {
         String sessionId = parts[0];
         String refreshPlain = parts.length > 1 ? parts[1] : null;
         String access = jwtTokenProvider.createAccessToken(u.getId(), u.getUsername(), Collections.emptyList(), sessionId);
-        return ResponseEntity.ok(new LoginResponse(access, refreshPlain, sessionId, 21600));
+        return ResponseEntity.ok(new LoginResponse(access, refreshPlain, sessionId, jwtTokenProvider.getExpireSeconds()));
     }
 
     public static class RefreshRequest {
@@ -95,7 +95,7 @@ public class AuthController {
         String userId = user == null ? "" : user.getId();
         String username = user == null ? "" : user.getUsername();
         String access = jwtTokenProvider.createAccessToken(userId, username, Collections.emptyList(), req.sessionId);
-        return ResponseEntity.ok(new LoginResponse(access, res.refreshToken, req.sessionId, 21600));
+        return ResponseEntity.ok(new LoginResponse(access, res.refreshToken, req.sessionId, jwtTokenProvider.getExpireSeconds()));
     }
 
     @PostMapping("/logout")

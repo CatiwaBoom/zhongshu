@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="DataSourcePerFileMappings">
-    <file url="mock:///V2__create_workflow_engine (snapshot).sql" value="30c81c6d-4082-4478-86e8-bb347215439b" />
     <file url="file://$PROJECT_DIR$/src/main/resources/db/migration/V1__create_data_source.sql" value="30c81c6d-4082-4478-86e8-bb347215439b" />
     <file url="file://$PROJECT_DIR$/src/main/resources/db/migration/V2__create_workflow_engine.sql" value="30c81c6d-4082-4478-86e8-bb347215439b" />
   </component>

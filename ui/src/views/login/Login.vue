@@ -78,7 +78,7 @@ const handleLogin = async () => {
 
   loading.value = true
     try {
-      // Use /auth/login which returns accessToken + refresh info
+      // 使用 /auth/login，后端返回 accessToken 与 refresh 信息
       const res = await request.post('/auth/login', {
         username: form.username,
         password: form.password,
@@ -86,20 +86,30 @@ const handleLogin = async () => {
       })
 
       const data = res.data
-      // AuthController returns LoginResponse (not wrapped), but when proxied it may be inside data
+      // AuthController 返回 LoginResponse（非封装），但在代理或网关场景下可能被包装在 data 字段中
       const accessToken = data?.accessToken || data?.data?.accessToken
       if (accessToken) {
         localStorage.setItem('token', accessToken)
+        // 若返回包含 refreshToken 和 sessionId，则一并保存以支持自动续签
+        const refreshToken = data?.refreshToken || data?.data?.refreshToken
+        const sessionId = data?.sessionId || data?.data?.sessionId
+        if (refreshToken) localStorage.setItem('refreshToken', refreshToken)
+        if (sessionId) localStorage.setItem('sessionId', sessionId)
         localStorage.setItem('username', form.username)
         ElMessage.success('登录成功')
         router.push('/dashboard')
       } else {
-        // fallback: handle older /user/login wrapped response
+        // 兼容旧接口：回退处理旧版本 /user/login 的封装响应格式
         const wrapped = data
         if (wrapped && (wrapped.code === 200 || wrapped.code === 0)) {
           const token = wrapped.data?.token || wrapped.data?.accessToken
           if (token) {
             localStorage.setItem('token', token)
+            // 旧的封装响应中可能包含 refreshToken/sessionId，一并保存以兼容旧客户端
+            const r = wrapped.data?.refreshToken || wrapped.data?.data?.refreshToken
+            const sid = wrapped.data?.sessionId || wrapped.data?.data?.sessionId
+            if (r) localStorage.setItem('refreshToken', r)
+            if (sid) localStorage.setItem('sessionId', sid)
             if (wrapped.data?.username) localStorage.setItem('username', wrapped.data.username)
             ElMessage.success('登录成功')
             router.push('/dashboard')

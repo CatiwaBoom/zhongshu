@@ -38,11 +38,17 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 Claims claims = claimsJws.getBody();
                 String userId = claims.getSubject();
                 String jti = claims.getId();
+                // 从 JWT claims 中读取角色列表（可能为原生 List，需要转换为 String 类型列表）
                 List<String> roles = claims.get("roles", List.class);
 
-                // verify session
+                // 校验 session 并触发滑动过期：
                 // 1) 校验 session 是否有效（未被踢、未过期）
+                // 2) 若有效则调用 touchSession 更新 lastSeen/expiresAt（延长会话有效期）
                 if (sessionService != null && sessionService.isSessionValid(jti)) {
+                    try {
+                        sessionService.touchSession(jti);
+                    } catch (Exception ignored) {
+                    }
                     // 2) 基于 JWT 中的 roles 构建 Spring Security Authentication
                     UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
                             userId,

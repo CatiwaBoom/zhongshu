@@ -53,6 +53,13 @@ public class SessionService {
     }
 
     /**
+     * 更新会话的活动时间（滑动过期），实现可选择性覆盖
+     */
+    public void touchSession(String sessionId) {
+        throw new UnsupportedOperationException("Not implemented in base SessionService");
+    }
+
+    /**
      * 撤销会话（踢人）
      * 应写入审计日志并在必要时将 jti 加入黑名单
      */
