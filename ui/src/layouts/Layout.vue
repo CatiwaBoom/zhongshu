@@ -31,6 +31,16 @@
             <el-icon><Files /></el-icon>
             <template #title>流程定义</template>
           </el-menu-item>
+
+          <el-menu-item index="/seatunnel/pipeline">
+            <el-icon><Operation /></el-icon>
+            <template #title>数据采集任务</template>
+          </el-menu-item>
+
+          <el-menu-item index="/seatunnel/datasync">
+            <el-icon><Sort /></el-icon>
+            <template #title>数据同步任务</template>
+          </el-menu-item>
         </el-menu>
       </el-aside>
 
@@ -50,7 +60,7 @@
 </template>
 
 <script setup>
-import { House, Connection, Files } from '@element-plus/icons-vue'
+import { House, Connection, Files, Operation, Sort } from '@element-plus/icons-vue'
 import { useRoute, useRouter } from 'vue-router'
 import { computed } from 'vue'
 

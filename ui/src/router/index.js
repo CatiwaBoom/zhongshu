@@ -57,6 +57,18 @@ const routes = [
                 name: 'WorkflowDesigner',
                 component: () => import('@/views/workflow-design/WorkflowDesigner.vue'),
                 meta: { title: '流程设计', hidden: true }
+            },
+            {
+                path: 'seatunnel/pipeline',
+                name: 'SeatunnelPipelineManagement',
+                component: () => import('@/views/seatunnel/SeatunnelPipelineManagement.vue'),
+                meta: { title: '数据采集任务', icon: 'Operation' }
+            },
+            {
+                path: 'seatunnel/datasync',
+                name: 'DataSyncTaskManagement',
+                component: () => import('@/views/seatunnel/DataSyncTaskManagement.vue'),
+                meta: { title: '数据同步任务', icon: 'Sort' }
             }
         ]
     },
