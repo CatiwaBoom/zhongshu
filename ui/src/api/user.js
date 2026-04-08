@@ -1,7 +1,8 @@
 import request from '@/utils/request'
 
-export const getUserList = () => {
-  return request.get('/user/list')
+export const getUserList = (params) => {
+  // forward params as query parameters
+  return request.get('/user/list', { params })
 }
 
 export const createUser = (data) => {

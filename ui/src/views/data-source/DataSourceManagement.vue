@@ -89,9 +89,8 @@
                 <div class="list-header">
                   <div>
                     <h2>数据源列表</h2>
-                    <p>字段基于 DataSourceEntity / BaseEntity</p>
                   </div>
-                  <div class="list-total">共 {{ filteredList.length }} 条数据</div>
+                  <div class="list-total">共 {{ displayTotal }} 条数据</div>
                 </div>
 
                 <div v-loading="loading" class="list-body">
@@ -164,19 +163,20 @@
                   <el-empty v-else description="暂无数据源数据" />
                 </div>
 
-                <div class="list-footer" v-if="filteredList.length">
+                <div class="list-footer" v-if="total !== null || (list && list.length > 0)">
                   <div class="footer-text">
-                    显示 {{ pageStart }}-{{ pageEnd }} 条，共 {{ filteredList.length }} 条
+                    显示 {{ pageStart }}-{{ pageEnd }} 条，共 {{ displayTotal }} 条
                   </div>
 
                   <el-pagination
                     background
                     small
-                    layout="prev, pager, next"
+                    layout="sizes, prev, pager, next"
                     :current-page="query.current"
                     :page-size="query.size"
-                    :total="filteredList.length"
+                    :total="total || 0"
                     @current-change="handlePageChange"
+                    @size-change="handleSizeChange"
                   />
                 </div>
               </section>
@@ -279,10 +279,11 @@
             type: '',
             connectivity: '',
             current: 1,
-            size: 4
+            size: 10
           })
 
           const list = ref([])
+          const total = ref(null)
 
           const typeOptions = ['MySQL', 'PostgreSQL', 'Redis', 'MongoDB', 'DM', 'Other']
 
@@ -378,10 +379,8 @@
             })
           })
 
-          const pagedList = computed(() => {
-            const start = (query.current - 1) * query.size
-            return filteredList.value.slice(start, start + query.size)
-          })
+          // when backend provides pagination, `list` will be the current page records
+          const pagedList = computed(() => list.value)
 
           const stats = computed(() => ({
             total: filteredList.value.length,
@@ -390,30 +389,31 @@
             disconnected: filteredList.value.filter((item) => item.connectivity !== 1 && item.status === 0).length
           }))
 
-          const pageStart = computed(() => {
-            return filteredList.value.length ? (query.current - 1) * query.size + 1 : 0
-          })
-
-          const pageEnd = computed(() => {
-            return Math.min(query.current * query.size, filteredList.value.length)
-          })
 
           watch(
             () => [query.keyword, query.type, query.connectivity],
             () => {
               query.current = 1
+              loadList()
             }
           )
 
-          watch(filteredList, (value) => {
-            const maxPage = Math.max(1, Math.ceil(value.length / query.size))
-            if (query.current > maxPage) {
-              query.current = maxPage
-            }
+          // ensure current page is valid if total changes
+          watch(total, (val) => {
+            const t = val || 0
+            const maxPage = Math.max(1, Math.ceil(t / query.size))
+            if (query.current > maxPage) query.current = maxPage
           })
 
           const handlePageChange = (page) => {
             query.current = page
+            loadList()
+          }
+
+          const handleSizeChange = (size) => {
+            query.size = size
+            query.current = 1
+            loadList()
           }
 
           const resetForm = () => {
@@ -435,11 +435,38 @@
           const loadList = async () => {
             loading.value = true
             try {
-              const res = await getDataSourceList()
+              const params = {
+                keyword: query.keyword || undefined,
+                type: query.type || undefined,
+                connectivity: query.connectivity || undefined,
+                page: query.current,
+                size: query.size
+              }
+              const res = await getDataSourceList(params)
               const result = res.data
 
-              if (result?.code === 200 && Array.isArray(result.data)) {
-                list.value = result.data
+              if (result?.code === 200) {
+                const data = result.data
+                if (data && Array.isArray(data.records)) {
+                  list.value = data.records || []
+                  let t = undefined
+                  if (data.total !== undefined && data.total !== null) t = data.total
+                  else if (data.totalCount !== undefined && data.totalCount !== null) t = data.totalCount
+                  else if (data.totalElements !== undefined && data.totalElements !== null) t = data.totalElements
+                  const tn = Number(t)
+                  const reported = (t !== undefined && t !== null && Number.isFinite(tn)) ? tn : 0
+                  total.value = Math.max(reported, list.value ? list.value.length : 0)
+                } else if (Array.isArray(data)) {
+                  // backend returned raw array
+                  list.value = data
+                  total.value = data.length
+                } else if (data && Array.isArray(data.data)) {
+                  list.value = data.data
+                  total.value = (data.total !== undefined && data.total !== null) ? Number(data.total) : list.value.length
+                } else {
+                  list.value = []
+                  total.value = 0
+                }
               } else {
                 ElMessage.error(result?.msg || '获取数据源列表失败')
               }
@@ -516,6 +543,25 @@
 
           onMounted(() => {
             loadList()
+          })
+
+          const pageStart = computed(() => {
+            const t = total.value
+            if (t && t > 0) return (query.current - 1) * query.size + 1
+            if (list.value && list.value.length > 0) return (query.current - 1) * query.size + 1
+            return 0
+          })
+
+          const pageEnd = computed(() => {
+            const t = total.value
+            if (t && t > 0) return Math.min(query.current * query.size, t)
+            if (list.value && list.value.length > 0) return pageStart.value + list.value.length - 1
+            return 0
+          })
+
+          const displayTotal = computed(() => {
+            if (total.value === null) return list.value ? list.value.length : '--'
+            return total.value
           })
           </script>
 

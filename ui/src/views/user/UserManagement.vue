@@ -33,9 +33,8 @@
       <div class="list-header">
         <div>
           <h2>用户列表</h2>
-          <p>字段映射 UserEntity</p>
         </div>
-        <div class="list-total">共 {{ total }} 条</div>
+        <div class="list-total">共 {{ displayTotal }} 条</div>
       </div>
 
       <div v-loading="loading" class="list-body">
@@ -75,8 +74,8 @@
               <div class="source-meta">
                 <div><span>主键ID：</span>{{ item.id || '--' }}</div>
                 <div><span>用户名：</span>{{ item.username || '--' }}</div>
-                <div><span>创建时间：</span>{{ item.createdAt || '--' }}</div>
-                <div><span>更新时间：</span>{{ item.updatedAt || '--' }}</div>
+                <div><span>创建时间：</span>{{ formatDate(item.createdAt) }}</div>
+                <div><span>更新时间：</span>{{ formatDate(item.updatedAt) }}</div>
               </div>
             </article>
           </div>
@@ -85,16 +84,17 @@
         <el-empty v-else description="暂无用户数据" />
       </div>
 
-      <div class="list-footer" v-if="total">
-        <div class="footer-text">显示 {{ pageStart }}-{{ pageEnd }} 条，共 {{ total }} 条</div>
+      <div class="list-footer" v-if="total !== null || (list && list.length > 0)">
+        <div class="footer-text">显示 {{ pageStart }}-{{ pageEnd }} 条，共 {{ displayTotal }} 条</div>
         <el-pagination
             background
             small
-            layout="prev, pager, next"
+            layout="sizes, prev, pager, next"
             :current-page="query.current"
             :page-size="query.size"
-            :total="total"
+            :total="total || 0"
             @current-change="handlePageChange"
+            @size-change="handleSizeChange"
         />
       </div>
     </section>
@@ -186,11 +186,11 @@ const query = reactive({
   status: undefined,
   isSuper: undefined,
   current: 1,
-  size: 4
+  size: 10
 })
 
 const list = ref([])
-const total = ref(0)
+const total = ref(null)
 
 const emptyForm = () => ({
   id: '',
@@ -218,11 +218,45 @@ watch(
 )
 
 const pagedList = computed(() => list.value)
-const pageStart = computed(() => total.value ? (query.current - 1) * query.size + 1 : 0)
-const pageEnd = computed(() => Math.min(query.current * query.size, total.value))
+const pageStart = computed(() => {
+  const t = total.value
+  if (t && t > 0) return (query.current - 1) * query.size + 1
+  if (list.value && list.value.length > 0) return (query.current - 1) * query.size + 1
+  return 0
+})
+const pageEnd = computed(() => {
+  const t = total.value
+  if (t && t > 0) return Math.min(query.current * query.size, t)
+  if (list.value && list.value.length > 0) return pageStart.value + list.value.length - 1
+  return 0
+})
+
+const formatDate = (val) => {
+  if (val === null || val === undefined || val === '') return '--'
+  // if number (ms) or numeric string
+  let ts = val
+  if (typeof val === 'string' && /^\d+$/.test(val)) ts = Number(val)
+  if (typeof ts === 'number') {
+    // if looks like seconds (10 digits) convert to ms
+    if (ts > 0 && ts < 1e11) ts = ts * 1000
+    const d = new Date(ts)
+    if (!isNaN(d.getTime())) return d.toLocaleString()
+    return String(val)
+  }
+  // try parse as ISO
+  const d = new Date(val)
+  if (!isNaN(d.getTime())) return d.toLocaleString()
+  return String(val)
+}
 
 const handlePageChange = (page) => {
   query.current = page
+  loadList()
+}
+
+const handleSizeChange = (size) => {
+  query.size = size
+  query.current = 1
   loadList()
 }
 
@@ -252,9 +286,36 @@ const loadList = async () => {
     }
     const res = await getUserList(params)
     const result = res.data
-    if (result?.code === 200 && result.data) {
-      list.value = result.data.records || []
-      total.value = result.data.total || 0
+    // debug: print response structure to console for quick troubleshooting
+    // eslint-disable-next-line no-console
+    console.debug('getUserList result:', result)
+
+    if (result?.code === 200) {
+      const data = result.data
+      // Case 1: data is Page-like object with records + total
+        if (data && Array.isArray(data.records)) {
+        list.value = data.records || []
+        let t = undefined
+        if (data.total !== undefined && data.total !== null) t = data.total
+        else if (data.totalCount !== undefined && data.totalCount !== null) t = data.totalCount
+        else if (data.totalElements !== undefined && data.totalElements !== null) t = data.totalElements
+        const tn = Number(t)
+        const reported = (t !== undefined && t !== null && Number.isFinite(tn)) ? tn : 0
+        // ensure total is at least the loaded records length
+        total.value = Math.max(reported, list.value ? list.value.length : 0)
+      } else if (Array.isArray(data)) {
+        // Case 2: backend returned raw array
+        list.value = data
+        total.value = data.length
+      } else if (data && Array.isArray(data.data)) {
+        // Case 3: nested data.data
+        list.value = data.data
+        total.value = (data.total !== undefined && data.total !== null) ? Number(data.total) : list.value.length
+      } else {
+        // unknown shape: try to infer
+        list.value = []
+        total.value = 0
+      }
     } else {
       ElMessage.error(result?.msg || '获取用户失败')
     }
@@ -307,6 +368,11 @@ const handleDelete = async (row) => {
 
 onMounted(() => {
   loadList()
+})
+
+const displayTotal = computed(() => {
+  if (total.value === null) return list.value ? list.value.length : '--'
+  return total.value
 })
 </script>
 

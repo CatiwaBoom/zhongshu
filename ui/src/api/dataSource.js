@@ -1,7 +1,8 @@
 import request from '@/utils/request'
 
-export const getDataSourceList = () => {
-  return request.get('/datasource/list')
+export const getDataSourceList = (params) => {
+  // allow passing filter/pagination params: { keyword, type, connectivity, page, size }
+  return request.get('/datasource/list', { params })
 }
 
 export const createDataSource = (data) => {

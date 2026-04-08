@@ -33,9 +33,7 @@
       <div class="list-header">
         <div>
           <h2>流程定义列表</h2>
-          <p>字段映射 ProcessDefinitionEntity</p>
               </div>
-                    <div class="list-total">共 {{ total }} 条</div>
       </div>
 
       <div v-loading="loading" class="list-body">
