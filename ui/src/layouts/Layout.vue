@@ -46,7 +46,56 @@
 
       <el-container>
         <el-header class="header">
-          <el-button type="text" @click="logout">退出登录</el-button>
+          <div class="header-actions">
+            <el-popover
+              placement="bottom-end"
+              trigger="click"
+              :width="380"
+              @show="onNoticePopoverShow"
+            >
+              <template #reference>
+                <el-badge :is-dot="notificationStore.hasUnread" class="notice-badge">
+                  <button class="notice-entry" type="button">
+                    <el-icon><Message /></el-icon>
+                    <span>站内信</span>
+                  </button>
+                </el-badge>
+              </template>
+
+              <div class="notice-panel">
+                <div class="notice-panel-header">
+                  <span>站内信</span>
+                  <el-button
+                    text
+                    type="primary"
+                    :disabled="!notificationStore.hasUnread"
+                    @click="markAllRead"
+                  >
+                    全部已读
+                  </el-button>
+                </div>
+
+                <div v-if="!noticeList.length" class="notice-empty">暂无消息</div>
+                <div v-else class="notice-list">
+                  <div
+                    v-for="item in noticeList"
+                    :key="item.id"
+                    class="notice-item"
+                    @click="markOneRead(item)"
+                  >
+                    <div class="notice-title-row">
+                      <span class="notice-title">{{ item.title || '系统通知' }}</span>
+                      <span v-if="Number(item.isRead || 0) === 0" class="unread-dot" />
+                    </div>
+                    <p class="notice-content">{{ item.content || '-' }}</p>
+                    <p class="notice-time">{{ formatTime(item.createdAt) }}</p>
+                  </div>
+                </div>
+              </div>
+            </el-popover>
+
+            <el-button type="text" @click="logout">退出登录</el-button>
+          </div>
         </el-header>
 
         <el-main class="main-content">
@@ -60,18 +109,61 @@
 </template>
 
 <script setup>
-import { House, Connection, Files, Operation, Sort } from '@element-plus/icons-vue'
+import { House, Connection, Files, Operation, Sort, Message } from '@element-plus/icons-vue'
 import { useRoute, useRouter } from 'vue-router'
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted } from 'vue'
+import { ElMessage } from 'element-plus'
+import { useNotificationStore } from '@/stores/notification'
 
 const router = useRouter()
 const route = useRoute()
-const isFullScreen = computed(() => route.name === 'WorkflowDesigner' && String(route.params?.id || '') === 'new')
+const isFullScreen = computed(() => route.name === 'WorkflowDesigner')
+const notificationStore = useNotificationStore()
+const noticeList = computed(() => notificationStore.latestList)
+
+const formatTime = (value) => {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '-'
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  const hh = String(date.getHours()).padStart(2, '0')
+  const mm = String(date.getMinutes()).padStart(2, '0')
+  return `${y}-${m}-${d} ${hh}:${mm}`
+}
+
+const markOneRead = async (item) => {
+  if (!item?.id || Number(item.isRead || 0) === 1) return
+  await notificationStore.markRead(item.id)
+}
+
+const markAllRead = async () => {
+  await notificationStore.markAllRead()
+  ElMessage.success('已全部标记为已读')
+}
+
+const onNoticePopoverShow = async () => {
+  await notificationStore.refresh()
+}
 
 const logout = () => {
+  notificationStore.stop()
   localStorage.removeItem('token')
+  localStorage.removeItem('refreshToken')
+  localStorage.removeItem('sessionId')
+  localStorage.removeItem('lastActivity')
   router.push('/login')
 }
+
+onMounted(() => {
+  // 站内信入口放在全局布局中初始化，确保进入系统后就开始接收实时推送
+  notificationStore.init()
+})
+
+onBeforeUnmount(() => {
+  notificationStore.stop()
+})
 </script>
 
 <style scoped lang="scss">
@@ -104,6 +196,12 @@ const logout = () => {
     display: flex;
     align-items: center;
     justify-content: flex-end;
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
   }
 
   .main-content {
@@ -122,6 +220,107 @@ const logout = () => {
     padding: 20px;
     box-sizing: border-box;
     overflow: auto;
+  }
+}
+
+.notice-badge {
+  :deep(.el-badge__content.is-fixed) {
+    top: 9px;
+    right: 6px;
+  }
+}
+
+.notice-entry {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  border-radius: 999px;
+  padding: 6px 12px;
+  background: linear-gradient(135deg, #409eff 0%, #66b1ff 100%);
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.2s ease;
+
+  &:hover {
+    box-shadow: 0 8px 16px rgba(64, 158, 255, 0.3);
+    transform: translateY(-1px);
+  }
+}
+
+.notice-panel {
+  .notice-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #eef2f7;
+    font-weight: 600;
+  }
+
+  .notice-empty {
+    padding: 24px 0;
+    color: #909399;
+    text-align: center;
+  }
+
+  .notice-list {
+    max-height: 360px;
+    overflow-y: auto;
+    padding-top: 8px;
+  }
+
+  .notice-item {
+    border-radius: 10px;
+    border: 1px solid #edf2f7;
+    padding: 10px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+
+    &:hover {
+      border-color: #c6e2ff;
+      background: #f5faff;
+    }
+
+    .notice-title-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+
+    .notice-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #303133;
+    }
+
+    .unread-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #f56c6c;
+      display: inline-block;
+    }
+
+    .notice-content {
+      font-size: 13px;
+      color: #606266;
+      margin: 0;
+      line-height: 1.5;
+      display: -webkit-box;
+      line-clamp: 2;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .notice-time {
+      margin: 8px 0 0;
+      font-size: 12px;
+      color: #909399;
+    }
   }
 }
 

@@ -1,27 +1,13 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
-// 布局组件
 import Layout from '@/layouts/Layout.vue'
 
-// 静态路由（无需权限）
 const routes = [
     {
         path: '/login',
         name: 'Login',
         component: () => import('@/views/login/Login.vue'),
         meta: { title: '登录' }
-    },
-    {
-        path: '/datasource',
-        name: 'DataSourceManagement',
-        component: () => import('@/views/data-source/DataSourceManagement.vue'),
-        meta: { title: '数据源管理', icon: 'Connection' }
-    },
-    {
-        path: '/user',
-        name: 'UserManagement',
-        component: () => import('@/views/user/UserManagement.vue'),
-        meta: { title: '用户管理', icon: 'User' }
     },
     {
         path: '/',
@@ -53,10 +39,10 @@ const routes = [
                 meta: { title: '流程定义', icon: 'Files' }
             },
             {
-                path: 'workflow/definition/design/:id',
+                path: 'workflow/designer/:id',
                 name: 'WorkflowDesigner',
                 component: () => import('@/views/workflow-design/WorkflowDesigner.vue'),
-                meta: { title: '流程设计', hidden: true }
+                meta: { title: '流程设计器', icon: 'Operation' }
             },
             {
                 path: 'seatunnel/pipeline',
@@ -72,7 +58,6 @@ const routes = [
             }
         ]
     },
-    // 404 页面
     {
         path: '/:pathMatch(.*)*',
         component: () => import('@/views/404/404.vue')
@@ -84,7 +69,6 @@ const router = createRouter({
     routes
 })
 
-// 路由守卫（示例：未登录跳转到登录页）
 router.beforeEach((to, from, next) => {
     const token = localStorage.getItem('token')
     if (to.name !== 'Login' && !token) {

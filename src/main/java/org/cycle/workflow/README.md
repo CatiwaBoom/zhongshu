@@ -1,17 +1,30 @@
-# Workflow Engine Module
+# Workflow Designer Module
 
-轻量级流程引擎模块，支持：基础审批、会签、或签、移交、终止、撤回。
+This module provides a drag-and-drop workflow designer backend for the Vue3 front end.
 
-## API
+## Backend Endpoints
 
-- `POST /workflow/definition/publish` 发布流程定义（自动版本+1）
-- `POST /workflow/instance/start` 发起流程
-- `POST /workflow/task/action` 任务动作（APPROVE/REJECT/TRANSFER/WITHDRAW/TERMINATE）
-- `GET /workflow/instance/{id}` 查询流程实例
+- `GET /workflow/definitions?keyword=`: list definitions
+- `GET /workflow/definition/next-code`: generate a code
+- `POST /workflow/definition/publish`: create definition
+- `PUT /workflow/definition/{id}`: update metadata
+- `DELETE /workflow/definition/{id}`: delete definition and design
+- `GET /workflow/definition/{id}/design`: load designer JSON
+- `PUT /workflow/definition/{id}/design`: save designer JSON
+- `DELETE /workflow/definition/{id}/node/{nodeId}`: remove a node and related edges
 
-## 节点审批模式
+## Frontend Pages
 
-- `BASIC`：单人审批
-- `OR_SIGN`：任意一人通过即节点通过
-- `COUNTER_SIGN`：全员通过才节点通过
+- `ui/src/views/workflow-definition/WorkflowDefinitionManagement.vue`
+- `ui/src/views/workflow-design/WorkflowDesigner.vue`
+
+## Designer JSON Shape
+
+```json
+{
+  "nodes": [],
+  "edges": [],
+  "viewport": { "x": 0, "y": 0, "zoom": 1 }
+}
+```
 

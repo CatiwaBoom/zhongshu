@@ -60,3 +60,10 @@ export const getNextDefinitionCode = () => {
   return request.get('/workflow/definition/next-code')
 }
 
+/**
+ * 删除流程中的单个节点（并清理关联连线）
+ * DELETE /workflow/definition/{id}/node/{nodeId}
+ */
+export const deleteProcessNode = (id, nodeId) => {
+  return request.delete(`/workflow/definition/${id}/node/${nodeId}`)
+}
