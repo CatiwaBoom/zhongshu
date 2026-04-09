@@ -191,7 +191,7 @@ const emptyForm = () => ({
   name: '',
   configFormat: 'hocon',
   configContent: '',
-  execMode: 'local',
+  execMode: 'cluster',
   clusterName: '',
   status: 1,
   remark: ''

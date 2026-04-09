@@ -8,6 +8,8 @@ import org.springframework.data.redis.core.HashOperations;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 
+import java.util.concurrent.TimeUnit;
+
 import static org.mockito.Mockito.*;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -40,7 +42,7 @@ public class SessionServiceTest {
         when(valueOps.get("refresh:" + refresh)).thenReturn(sessionUuid);
         sessionService.storeRefreshToken(refresh, sessionUuid, 3600);
         // verify set called
-        verify(valueOps).set(eq("refresh:" + refresh), eq((Object)sessionUuid), org.mockito.ArgumentMatchers.any());
+        verify(valueOps).set(eq("refresh:" + refresh), eq((Object) sessionUuid), eq(3600L), eq(TimeUnit.SECONDS));
         String got = sessionService.getSessionUuidByRefreshToken(refresh);
         assertEquals(sessionUuid, got);
     }
@@ -55,7 +57,7 @@ public class SessionServiceTest {
         boolean ok = sessionService.rotateRefreshToken(oldR, newR, sessionUuid, 3600);
         assertTrue(ok);
         verify(redisTemplate).delete(eq("refresh:" + oldR));
-        verify(valueOps).set(eq("refresh:" + newR), eq((Object)sessionUuid), org.mockito.ArgumentMatchers.any());
+        verify(valueOps).set(eq("refresh:" + newR), eq((Object) sessionUuid), eq(3600L), eq(TimeUnit.SECONDS));
     }
 }
 

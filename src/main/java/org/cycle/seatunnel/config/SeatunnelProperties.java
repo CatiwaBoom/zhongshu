@@ -11,4 +11,5 @@ public class SeatunnelProperties {
     private String execMode;
     private String clusterName;
     private String clientAddress;
+    private String restBaseUrl;
 }

@@ -117,7 +117,7 @@ public class SeatunnelController extends BaseController {
                 pipeline.setConfigFormat("hocon");
             }
             if (pipeline.getExecMode() == null || pipeline.getExecMode().trim().isEmpty()) {
-                pipeline.setExecMode("local");
+                pipeline.setExecMode("cluster");
             }
             boolean ok = pipelineService.save(pipeline);
             if (!ok) {

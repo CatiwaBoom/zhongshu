@@ -4,12 +4,15 @@ import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import org.cycle.seatunnel.config.SeatunnelProperties;
 import org.cycle.seatunnel.entity.SeatunnelExecutionEntity;
 import org.cycle.seatunnel.entity.SeatunnelPipelineEntity;
 import org.cycle.seatunnel.enums.SeatunnelExecutionStatus;
 import org.cycle.seatunnel.mapper.SeatunnelExecutionMapper;
 import org.cycle.seatunnel.runtime.SeatunnelCliRunner;
+import org.cycle.seatunnel.runtime.SeatunnelRestClient;
 import org.cycle.seatunnel.service.SeatunnelExecutionService;
 import org.cycle.seatunnel.service.SeatunnelPipelineService;
 import org.springframework.stereotype.Service;
@@ -42,7 +45,9 @@ public class SeatunnelExecutionServiceImpl extends ServiceImpl<SeatunnelExecutio
 
     private final SeatunnelPipelineService pipelineService;
     private final SeatunnelCliRunner cliRunner;
+    private final SeatunnelRestClient restClient;
     private final SeatunnelProperties properties;
+    private final ObjectMapper objectMapper;
 
     @Resource(name = "seatunnelExecutor")
     private Executor executor;
@@ -64,7 +69,10 @@ public class SeatunnelExecutionServiceImpl extends ServiceImpl<SeatunnelExecutio
             throw new IllegalArgumentException("pipeline configContent is blank");
         }
 
-        cliRunner.validateHome();
+        String execMode = pickExecMode(pipeline);
+        if (!"cluster".equalsIgnoreCase(execMode)) {
+            cliRunner.validateHome();
+        }
 
         String executionId = IdWorker.getIdStr();
         String format = normalizeFormat(pipeline.getConfigFormat());
@@ -156,59 +164,69 @@ public class SeatunnelExecutionServiceImpl extends ServiceImpl<SeatunnelExecutio
 
     private void runOnCluster(String executionId, SeatunnelPipelineEntity pipeline, Path configPath, Path logPath, String clusterName) {
         try {
-            Path hazelcastClientConfig = writeHazelcastClientConfig(resolveRunDir(pipeline.getId(), executionId), pickClusterName(pipeline), pickClientAddress(), logPath);
-
-            final String[] jobIdHolder = new String[]{null};
-            SeatunnelCliRunner.CommandResult result = cliRunner.submitAndWait(
-                    configPath,
-                    logPath,
-                    clusterName,
-                    pipeline.getName(),
-                    hazelcastClientConfig,
-                    line -> {
-                        if (jobIdHolder[0] != null) {
-                            return;
-                        }
-                        String jobId = extractJobId(line);
-                        if (jobId != null) {
-                            jobIdHolder[0] = jobId;
-                            SeatunnelExecutionEntity u = new SeatunnelExecutionEntity();
-                            u.setId(executionId);
-                            u.setSeatunnelJobId(jobId);
-                            updateById(u);
-                        }
-                    }
-            );
-
-            String jobId = jobIdHolder[0];
-            if (jobId == null) {
-                jobId = extractJobId(result.getOutput());
-            }
-            if (jobId == null) {
-                jobId = parseJobId(logPath);
+            String format = normalizeFormat(pipeline.getConfigFormat());
+            JsonNode submitResult = restClient.submitJob(pipeline.getConfigContent(), format, "", pipeline.getName());
+            String jobId = safeTrim(submitResult.path("jobId").asText());
+            if (jobId.isEmpty()) {
+                throw new IllegalStateException("submit-job return empty jobId");
             }
 
-            SeatunnelExecutionEntity finish = new SeatunnelExecutionEntity();
-            finish.setId(executionId);
-            finish.setExitCode(result.getExitCode());
-            finish.setSeatunnelJobId(jobId);
-            finish.setFinishedAt(Timestamp.from(Instant.now()));
+            SeatunnelExecutionEntity u = new SeatunnelExecutionEntity();
+            u.setId(executionId);
+            u.setSeatunnelJobId(jobId);
+            updateById(u);
 
-            SeatunnelExecutionEntity current = getById(executionId);
-            if (current != null && SeatunnelExecutionStatus.CANCELLED.name().equalsIgnoreCase(current.getStatus())) {
-                updateById(finish);
-                return;
+            while (true) {
+                SeatunnelExecutionEntity current = getById(executionId);
+                if (current == null) {
+                    return;
+                }
+                if (SeatunnelExecutionStatus.CANCELLED.name().equalsIgnoreCase(current.getStatus())) {
+                    return;
+                }
+
+                JsonNode jobInfo = restClient.getJobInfo(jobId);
+                String status = safeTrim(jobInfo.path("jobStatus").asText());
+                if (status.isEmpty()) {
+                    Thread.sleep(2000);
+                    continue;
+                }
+
+                String upper = status.toUpperCase();
+                if ("RUNNING".equals(upper) || "CREATED".equals(upper) || "STARTING".equals(upper) || "FAILING".equals(upper)) {
+                    Thread.sleep(2000);
+                    continue;
+                }
+
+                SeatunnelExecutionEntity finish = new SeatunnelExecutionEntity();
+                finish.setId(executionId);
+                finish.setSeatunnelJobId(jobId);
+                finish.setFinishedAt(Timestamp.from(Instant.now()));
+
+                if ("FINISHED".equals(upper)) {
+                    finish.setStatus(SeatunnelExecutionStatus.SUCCESS.name());
+                    finish.setExitCode(0);
+                    updateById(finish);
+                    return;
+                }
+
+                if ("CANCELED".equals(upper) || "CANCELLED".equals(upper)) {
+                    finish.setStatus(SeatunnelExecutionStatus.CANCELLED.name());
+                    finish.setExitCode(1);
+                    updateById(finish);
+                    return;
+                }
+
+                if ("FAILED".equals(upper)) {
+                    finish.setStatus(SeatunnelExecutionStatus.FAILED.name());
+                    finish.setExitCode(1);
+                    finish.setErrorMessage(truncate(safeTrim(jobInfo.path("errorMsg").asText()), 1000));
+                    updateById(finish);
+                    return;
+                }
+
+                Thread.sleep(2000);
             }
-
-            if (result.getExitCode() == 0) {
-                finish.setStatus(SeatunnelExecutionStatus.SUCCESS.name());
-                updateById(finish);
-                return;
-            }
-
-            finish.setStatus(SeatunnelExecutionStatus.FAILED.name());
-            finish.setErrorMessage("seatunnel job failed, exitCode=" + result.getExitCode());
-            updateById(finish);
         } catch (Exception e) {
             markFailed(executionId, safeTrim(e.getMessage()).isEmpty() ? "submit failed" : e.getMessage(), null);
             SeatunnelExecutionEntity finish = new SeatunnelExecutionEntity();
@@ -304,10 +322,8 @@ public class SeatunnelExecutionServiceImpl extends ServiceImpl<SeatunnelExecutio
                 jobId = parseJobId(Paths.get(execution.getLogPath()));
             }
             if (!jobId.isEmpty()) {
-                Path logPath = Paths.get(execution.getLogPath());
-                String clusterName = pickClusterName(pipeline);
                 try {
-                    cliRunner.cancelJob(jobId, logPath, clusterName);
+                    restClient.stopJob(jobId, false);
                 } catch (Exception e) {
                     log.error("cancel cluster job failed, executionId={}, jobId={}", executionId, jobId, e);
                 }
@@ -486,5 +502,9 @@ public class SeatunnelExecutionServiceImpl extends ServiceImpl<SeatunnelExecutio
             Files.write(logPath, ("HAZELCAST_CLIENT_CONFIG=" + path.toAbsolutePath() + "\n").getBytes(StandardCharsets.UTF_8), java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
         }
         return path;
+    }
+
+    private JsonNode parseJobsArray(String configContent) throws IOException {
+        return objectMapper.readTree(configContent);
     }
 }
