@@ -34,7 +34,6 @@
         <div>
           <h2>用户列表</h2>
         </div>
-        <div class="list-total">共 {{ displayTotal }} 条</div>
       </div>
 
       <div v-loading="loading" class="list-body">
@@ -85,7 +84,7 @@
       </div>
 
       <div class="list-footer" v-if="total !== null || (list && list.length > 0)">
-        <div class="footer-text">显示 {{ pageStart }}-{{ pageEnd }} 条，共 {{ displayTotal }} 条</div>
+        <div class="footer-text">显示 {{ pageStart }}-{{ pageEnd }} 条，共 {{ total !== null ? total : (list ? list.length : '--') }} 条</div>
         <el-pagination
             background
             small
@@ -98,8 +97,6 @@
         />
       </div>
     </section>
-
-    <div class="page-footer">© 2026 用户管理</div>
 
     <el-dialog
         v-model="dialogVisible"
@@ -370,67 +367,43 @@ onMounted(() => {
   loadList()
 })
 
-const displayTotal = computed(() => {
-  if (total.value === null) return list.value ? list.value.length : '--'
-  return total.value
-})
 </script>
 
 <style scoped lang="scss">
 .user-page {
-  --primary: #409eff;
-  --success: #67c23a;
-  --warning: #e6a23c;
-  --danger: #f56c6c;
-  --text-main: #303133;
-  --text-sub: #909399;
-  --line: rgba(64, 158, 255, 0.14);
-  --bg-card: linear-gradient(135deg, #ffffff 0%, #f6fbff 100%);
-  --shadow: 0 12px 30px rgba(31, 45, 61, 0.08);
-
-  height: 100%;
-  min-height: 0;
   display: flex;
   flex-direction: column;
-  color: var(--text-main);
+  gap: 12px;
+  height: 100%;
+  min-height: 0;
+  color: #303133;
 }
 
+/* toolbar: align with workflow-definition toolbar */
 .toolbar-card,
-.list-card,
-.source-item {
-  background: var(--bg-card);
-  border: 1px solid var(--line);
-  border-radius: 18px;
-  box-shadow: var(--shadow);
-}
-
-.toolbar-card {
-  padding: 18px;
-  margin-bottom: 18px;
-  flex-shrink: 0;
-}
-
-.toolbar-row {
+.toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
+  gap: 12px;
 }
 
 .toolbar-search {
-  flex: 1;
-  min-width: 260px;
-  max-width: 420px;
+  width: 320px;
+  min-width: 160px;
 }
 
 .toolbar-actions {
   display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
+  gap: 8px;
 }
 
+/* simpler white card for list area */
 .list-card {
+  background: #fff;
+  border-radius: 8px;
+  border: 1px solid #eef2f6;
+  padding: 12px;
   flex: 1;
   min-height: 0;
   display: flex;
@@ -439,26 +412,21 @@ const displayTotal = computed(() => {
 }
 
 .list-header {
-  padding: 18px 20px;
-  border-bottom: 1px solid var(--line);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  flex-wrap: wrap;
+  padding: 8px 4px;
 }
 
 .list-header h2 {
   margin: 0;
-  font-size: 18px;
+  font-size: 16px;
 }
 
-.list-header p,
-.list-total,
-.footer-text,
-.page-footer {
-  margin: 4px 0 0;
-  color: var(--text-sub);
+.footer-text {
+  margin-top: 4px;
+  color: #909399;
   font-size: 13px;
 }
 
@@ -466,139 +434,81 @@ const displayTotal = computed(() => {
   flex: 1;
   min-height: 0;
   overflow: auto;
+  padding: 8px 4px 12px;
 }
 
 .source-list {
   display: grid;
-  gap: 16px;
-  padding: 18px;
+  gap: 12px;
 }
 
 .source-item {
-  padding: 18px;
-  transition: all 0.2s ease;
-}
-
-.source-item:hover {
-  transform: translateY(-2px);
-  border-color: rgba(64, 158, 255, 0.28);
+  background: #ffffff;
+  border: 1px solid #f0f3f7;
+  border-radius: 8px;
+  padding: 12px;
 }
 
 .source-item__top {
   display: flex;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
   align-items: flex-start;
 }
 
 .source-basic {
   display: flex;
-  gap: 14px;
+  gap: 12px;
   align-items: center;
   min-width: 0;
 }
 
 .source-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 14px;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 700;
   flex-shrink: 0;
-}
-
-.source-icon--user {
-  background: rgba(64, 158, 255, 0.14);
+  background: #f5f7fa;
   color: #409eff;
 }
 
-.source-title-wrap {
-  min-width: 0;
-}
+.source-title { font-size: 15px; font-weight: 600; }
+.source-subtitle { margin-top: 6px; font-size: 13px; color: #909399; }
 
-.source-title {
-  font-size: 17px;
-  font-weight: 600;
-  color: #1f2d3d;
-  word-break: break-all;
-}
-
-.source-subtitle {
-  margin-top: 6px;
-  font-size: 13px;
-  color: var(--text-sub);
-  word-break: break-all;
-}
-
-.source-ops {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-
-.op-buttons {
-  display: flex;
-  gap: 8px;
-}
+.source-ops { display: flex; align-items: center; gap: 8px; }
 
 .source-meta {
-  margin-top: 16px;
-  padding-top: 14px;
-  border-top: 1px dashed rgba(64, 158, 255, 0.18);
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed #eef2f6;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px 16px;
+  gap: 8px 12px;
   font-size: 13px;
   color: #606266;
 }
 
-.source-meta span {
-  color: #909399;
-}
-
 .list-footer {
-  padding: 16px 20px;
-  border-top: 1px solid var(--line);
+  padding: 10px 4px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  flex-wrap: wrap;
-}
-
-.page-footer {
-  flex-shrink: 0;
-  text-align: center;
-  padding: 18px 0 6px;
 }
 
 :deep(.el-input__wrapper),
 :deep(.el-select__wrapper) {
-  border-radius: 12px;
-  box-shadow: 0 0 0 1px rgba(64, 158, 255, 0.14) inset !important;
+  border-radius: 8px;
 }
 
-:deep(.el-dialog) {
-  border-radius: 18px;
-  overflow: hidden;
-}
+:deep(.el-dialog) { border-radius: 8px; }
 
 @media (max-width: 768px) {
-  .source-item__top {
-    flex-direction: column;
-  }
-
-  .source-ops {
-    width: 100%;
-    justify-content: space-between;
-  }
-
-  .source-meta {
-    grid-template-columns: 1fr;
-  }
+  .source-item__top { flex-direction: column; }
+  .source-meta { grid-template-columns: 1fr; }
 }
 </style>
