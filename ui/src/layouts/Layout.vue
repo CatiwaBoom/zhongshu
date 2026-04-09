@@ -23,12 +23,12 @@
           </el-menu-item>
 
           <el-menu-item index="/user">
-            <el-icon><Files /></el-icon>
+            <el-icon><User /></el-icon>
             <template #title>用户管理</template>
           </el-menu-item>
 
           <el-menu-item index="/workflow/definition">
-            <el-icon><Files /></el-icon>
+            <el-icon><Document /></el-icon>
             <template #title>流程定义</template>
           </el-menu-item>
 
@@ -115,7 +115,7 @@
 </template>
 
 <script setup>
-import { House, Connection, Files, Operation, Sort, Message, MessageBox } from '@element-plus/icons-vue'
+import { House, Connection, User, Document, Operation, Sort, Message, MessageBox } from '@element-plus/icons-vue'
 import { useRoute, useRouter } from 'vue-router'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'

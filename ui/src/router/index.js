@@ -36,7 +36,7 @@ const routes = [
                 path: 'workflow/definition',
                 name: 'WorkflowDefinitionManagement',
                 component: () => import('@/views/workflow-definition/WorkflowDefinitionManagement.vue'),
-                meta: { title: '流程定义', icon: 'Files' }
+                meta: { title: '流程定义', icon: 'Document' }
             },
             {
                 path: 'workflow/designer/:id',
