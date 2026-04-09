@@ -27,6 +27,12 @@ const routes = [
                 meta: { title: '数据源管理', icon: 'Connection' }
             },
             {
+                path: 'file/platform',
+                name: 'FilePlatform',
+                component: () => import('@/views/file-platform/FilePlatform.vue'),
+                meta: { title: '文件平台', icon: 'FolderOpened' }
+            },
+            {
                 path: 'user',
                 name: 'UserManagement',
                 component: () => import('@/views/user/UserManagement.vue'),

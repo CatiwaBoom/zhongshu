@@ -22,6 +22,11 @@
             <template #title>数据源管理</template>
           </el-menu-item>
 
+          <el-menu-item index="/file/platform">
+            <el-icon><FolderOpened /></el-icon>
+            <template #title>文件平台</template>
+          </el-menu-item>
+
           <el-menu-item index="/user">
             <el-icon><User /></el-icon>
             <template #title>用户管理</template>
@@ -115,7 +120,7 @@
 </template>
 
 <script setup>
-import { House, Connection, User, Document, Operation, Sort, Message, MessageBox } from '@element-plus/icons-vue'
+import { House, Connection, FolderOpened, User, Document, Operation, Sort, Message, MessageBox } from '@element-plus/icons-vue'
 import { useRoute, useRouter } from 'vue-router'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
