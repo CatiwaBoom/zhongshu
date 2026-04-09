@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 /**
  * 全局异常处理器：将常见异常映射为统一的 Result 响应体，便于前端识别处理
@@ -31,6 +32,14 @@ public class GlobalExceptionHandler {
         return Result.fail(409, ex.getMessage());
     }
 
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    @ResponseStatus(HttpStatus.PAYLOAD_TOO_LARGE)
+    @ResponseBody
+    public Result<?> handleMaxUploadSizeExceeded(MaxUploadSizeExceededException ex) {
+        logger.warn("上传文件超限: {}", ex.getMessage());
+        return Result.fail(413, "上传分片超过服务端限制，请减小分片大小或联系管理员调整限制");
+    }
+
     @ExceptionHandler(Exception.class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     @ResponseBody
@@ -39,4 +48,3 @@ public class GlobalExceptionHandler {
         return Result.fail(500, "服务器异常: " + ex.getMessage());
     }
 }
-
