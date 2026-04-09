@@ -2,6 +2,7 @@ package org.cycle.workflow.controller;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.cycle.common.controller.BaseController;
 import org.cycle.common.controller.Result;
 import org.cycle.workflow.dto.PublishWorkflowDefinitionRequest;
@@ -13,7 +14,6 @@ import org.cycle.workflow.service.WorkflowDefinitionService;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 @Slf4j
@@ -24,9 +24,14 @@ public class WorkflowDefinitionController extends BaseController {
     private final WorkflowDefinitionService workflowDefinitionService;
 
     @GetMapping("/workflow/definitions")
-    public Result<List<WorkflowDefinitionEntity>> list(@RequestParam(value = "keyword", required = false) String keyword) {
+    public Result<Page<WorkflowDefinitionEntity>> list(
+            @RequestParam(value = "keyword", required = false) String keyword,
+            @RequestParam(value = "page", defaultValue = "1") Integer page,
+            @RequestParam(value = "size", defaultValue = "10") Integer size
+    ) {
         try {
-            return success(workflowDefinitionService.listDefinitions(keyword), "查询成功");
+            // 与用户管理页统一：列表接口直接返回 Page，前端读取 records/total
+            return success(workflowDefinitionService.listDefinitions(keyword, page, size), "查询成功");
         } catch (Exception e) {
             log.error("查询流程定义失败", e);
             return fail(500, "查询失败: " + e.getMessage());

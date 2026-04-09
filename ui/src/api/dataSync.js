@@ -1,7 +1,7 @@
 import request from '@/utils/request'
 
-export const getDataSyncTaskList = () => {
-  return request.get('/seatunnel/datasync/list')
+export const getDataSyncTaskList = (params) => {
+  return request.get('/seatunnel/datasync/list', { params })
 }
 
 export const getDataSyncTask = (id) => {

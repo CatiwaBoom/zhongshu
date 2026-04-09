@@ -1,6 +1,7 @@
 package org.cycle.seatunnel.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.extern.slf4j.Slf4j;
 import org.cycle.common.controller.BaseController;
 import org.cycle.common.controller.Result;
@@ -11,8 +12,6 @@ import org.cycle.seatunnel.service.SeatunnelExecutionService;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
-import java.util.List;
-
 @Slf4j
 @RestController
 @RequestMapping("/seatunnel/datasync")
@@ -25,11 +24,21 @@ public class DataSyncTaskController extends BaseController {
     private SeatunnelExecutionService executionService;
 
     @GetMapping("/list")
-    public Result<List<DataSyncTaskEntity>> list() {
+    public Result<Page<DataSyncTaskEntity>> list(
+            @RequestParam(value = "keyword", required = false) String keyword,
+            @RequestParam(value = "page", defaultValue = "1") Integer page,
+            @RequestParam(value = "size", defaultValue = "10") Integer size
+    ) {
         try {
             QueryWrapper<DataSyncTaskEntity> qw = new QueryWrapper<>();
+            String safeKeyword = safeTrim(keyword);
+            if (!safeKeyword.isEmpty()) {
+                // 与其它管理页一致，支持按任务名称关键字筛选
+                qw.like("NAME", safeKeyword);
+            }
             qw.orderByDesc("UPDATED_AT");
-            return success(taskService.list(qw), "查询成功");
+            Page<DataSyncTaskEntity> p = new Page<>(Math.max(1, page), Math.max(1, size));
+            return success(taskService.page(p, qw), "查询成功");
         } catch (Exception e) {
             log.error("查询 datasync 列表失败", e);
             return fail(500, "查询失败: " + e.getMessage());

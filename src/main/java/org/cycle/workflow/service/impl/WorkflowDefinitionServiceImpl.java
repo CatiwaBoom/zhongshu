@@ -1,6 +1,7 @@
 package org.cycle.workflow.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -30,14 +31,18 @@ public class WorkflowDefinitionServiceImpl extends ServiceImpl<WorkflowDefinitio
     private final ObjectMapper objectMapper;
 
     @Override
-    public List<WorkflowDefinitionEntity> listDefinitions(String keyword) {
+    public Page<WorkflowDefinitionEntity> listDefinitions(String keyword, Integer page, Integer size) {
         QueryWrapper<WorkflowDefinitionEntity> qw = new QueryWrapper<>();
         String safeKeyword = safeTrim(keyword);
         if (!safeKeyword.isEmpty()) {
             qw.and(w -> w.like("NAME", safeKeyword).or().like("CODE", safeKeyword));
         }
         qw.orderByDesc("UPDATED_AT");
-        return list(qw);
+        // 分页参数兜底，避免前端传入非法页码导致查询异常
+        long current = Math.max(1, page == null ? 1 : page);
+        long pageSize = Math.max(1, size == null ? 10 : size);
+        Page<WorkflowDefinitionEntity> p = new Page<>(current, pageSize);
+        return page(p, qw);
     }
 
     @Override

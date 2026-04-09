@@ -1,7 +1,7 @@
 import request from '@/utils/request'
 
-export const getSeatunnelPipelineList = () => {
-  return request.get('/seatunnel/pipeline/list')
+export const getSeatunnelPipelineList = (params) => {
+  return request.get('/seatunnel/pipeline/list', { params })
 }
 
 export const createSeatunnelPipeline = (data) => {

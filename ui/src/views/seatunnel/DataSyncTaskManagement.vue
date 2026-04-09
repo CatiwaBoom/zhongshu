@@ -9,7 +9,7 @@
     </section>
 
     <section class="card" v-loading="loading">
-      <el-table :data="filteredList" style="width: 100%">
+      <el-table :data="pagedList" style="width: 100%">
         <el-table-column prop="name" label="任务名称" min-width="200" />
         <el-table-column label="源表" min-width="240">
           <template #default="{ row }">
@@ -43,7 +43,23 @@
         </el-table-column>
       </el-table>
 
-      <el-empty v-if="!filteredList.length && !loading" description="暂无同步任务" />
+      <el-empty v-if="!pagedList.length && !loading" description="暂无同步任务" />
+
+      <div class="list-footer" v-if="total !== null || (list && list.length > 0)">
+        <div class="footer-text">
+          显示 {{ pageStart }}-{{ pageEnd }} 条，共 {{ total !== null ? total : (list ? list.length : '--') }} 条
+        </div>
+        <el-pagination
+          background
+          small
+          layout="sizes, prev, pager, next"
+          :current-page="query.current"
+          :page-size="query.size"
+          :total="total || 0"
+          @current-change="handlePageChange"
+          @size-change="handleSizeChange"
+        />
+      </div>
     </section>
 
     <el-dialog v-model="dialogVisible" :title="dialogMode === 'create' ? '新增同步任务' : '编辑同步任务'" width="980px" destroy-on-close>
@@ -178,7 +194,12 @@ import { getSeatunnelExecution, getSeatunnelExecutionLog } from '@/api/seatunnel
 
 const loading = ref(false)
 const list = ref([])
-const query = reactive({ keyword: '' })
+const total = ref(null)
+const query = reactive({
+  keyword: '',
+  current: 1,
+  size: 10
+})
 
 const dataSources = ref([])
 const sourceSchemas = ref([])
@@ -214,10 +235,26 @@ const rules = {
   sinkTable: [{ required: true, message: '请输入目标表名', trigger: 'blur' }]
 }
 
-const filteredList = computed(() => {
-  const keyword = query.keyword.trim().toLowerCase()
-  if (!keyword) return list.value
-  return list.value.filter((item) => String(item?.name || '').toLowerCase().includes(keyword))
+watch(
+  () => query.keyword,
+  () => {
+    query.current = 1
+    loadList()
+  }
+)
+
+const pagedList = computed(() => list.value)
+const pageStart = computed(() => {
+  const t = total.value
+  if (t && t > 0) return (query.current - 1) * query.size + 1
+  if (list.value && list.value.length > 0) return (query.current - 1) * query.size + 1
+  return 0
+})
+const pageEnd = computed(() => {
+  const t = total.value
+  if (t && t > 0) return Math.min(query.current * query.size, t)
+  if (list.value && list.value.length > 0) return pageStart.value + list.value.length - 1
+  return 0
 })
 
 const formatTime = (value) => {
@@ -234,10 +271,25 @@ const tablePath = (schema, table) => {
 const loadList = async () => {
   loading.value = true
   try {
-    const res = await getDataSyncTaskList()
+    const res = await getDataSyncTaskList({
+      keyword: query.keyword || undefined,
+      page: query.current,
+      size: query.size
+    })
     const result = res.data
-    if (result?.code === 200 && Array.isArray(result.data)) {
-      list.value = result.data
+    if (result?.code === 200) {
+      const data = result.data
+      // 兼容分页对象与旧数组结构，便于后端平滑升级
+      if (data && Array.isArray(data.records)) {
+        list.value = data.records || []
+        total.value = Number(data.total ?? list.value.length)
+      } else if (Array.isArray(data)) {
+        list.value = data
+        total.value = data.length
+      } else {
+        list.value = []
+        total.value = 0
+      }
     } else {
       ElMessage.error(result?.msg || '获取列表失败')
     }
@@ -246,6 +298,17 @@ const loadList = async () => {
   } finally {
     loading.value = false
   }
+}
+
+const handlePageChange = (page) => {
+  query.current = page
+  loadList()
+}
+
+const handleSizeChange = (size) => {
+  query.size = size
+  query.current = 1
+  loadList()
 }
 
 const loadDataSources = async () => {
@@ -536,6 +599,19 @@ onMounted(async () => {
   border: 1px solid #ebeef5;
   border-radius: 12px;
   padding: 12px;
+}
+
+.list-footer {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.footer-text {
+  color: #909399;
+  font-size: 13px;
 }
 
 .run-head {

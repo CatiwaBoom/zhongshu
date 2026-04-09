@@ -14,7 +14,7 @@
     </section>
 
     <section class="list-card" v-loading="loading">
-      <el-table :data="filteredList" style="width: 100%">
+      <el-table :data="pagedList" style="width: 100%">
         <el-table-column prop="name" label="任务名称" min-width="220" />
         <el-table-column prop="execMode" label="模式" width="110">
           <template #default="{ row }">
@@ -40,7 +40,23 @@
         </el-table-column>
       </el-table>
 
-      <el-empty v-if="!filteredList.length && !loading" description="暂无任务" />
+      <el-empty v-if="!pagedList.length && !loading" description="暂无任务" />
+
+      <div class="list-footer" v-if="total !== null || (list && list.length > 0)">
+        <div class="footer-text">
+          显示 {{ pageStart }}-{{ pageEnd }} 条，共 {{ total !== null ? total : (list ? list.length : '--') }} 条
+        </div>
+        <el-pagination
+          background
+          small
+          layout="sizes, prev, pager, next"
+          :current-page="query.current"
+          :page-size="query.size"
+          :total="total || 0"
+          @current-change="handlePageChange"
+          @size-change="handleSizeChange"
+        />
+      </div>
     </section>
 
     <el-dialog
@@ -159,7 +175,12 @@ import {
 
 const loading = ref(false)
 const list = ref([])
-const query = reactive({ keyword: '' })
+const total = ref(null)
+const query = reactive({
+  keyword: '',
+  current: 1,
+  size: 10
+})
 
 const dialogVisible = ref(false)
 const dialogMode = ref('create')
@@ -185,10 +206,26 @@ const rules = {
   configContent: [{ required: true, message: '请输入作业配置', trigger: 'blur' }]
 }
 
-const filteredList = computed(() => {
-  const keyword = query.keyword.trim().toLowerCase()
-  if (!keyword) return list.value
-  return list.value.filter((item) => String(item?.name || '').toLowerCase().includes(keyword))
+watch(
+  () => query.keyword,
+  () => {
+    query.current = 1
+    loadList()
+  }
+)
+
+const pagedList = computed(() => list.value)
+const pageStart = computed(() => {
+  const t = total.value
+  if (t && t > 0) return (query.current - 1) * query.size + 1
+  if (list.value && list.value.length > 0) return (query.current - 1) * query.size + 1
+  return 0
+})
+const pageEnd = computed(() => {
+  const t = total.value
+  if (t && t > 0) return Math.min(query.current * query.size, t)
+  if (list.value && list.value.length > 0) return pageStart.value + list.value.length - 1
+  return 0
 })
 
 const formatTime = (value) => {
@@ -208,10 +245,25 @@ const statusTagType = (status) => {
 const loadList = async () => {
   loading.value = true
   try {
-    const res = await getSeatunnelPipelineList()
+    const res = await getSeatunnelPipelineList({
+      keyword: query.keyword || undefined,
+      page: query.current,
+      size: query.size
+    })
     const result = res.data
-    if (result?.code === 200 && Array.isArray(result.data)) {
-      list.value = result.data
+    if (result?.code === 200) {
+      const data = result.data
+      // 兼容分页对象与旧数组结构，避免接口升级过程中的页面空白
+      if (data && Array.isArray(data.records)) {
+        list.value = data.records || []
+        total.value = Number(data.total ?? list.value.length)
+      } else if (Array.isArray(data)) {
+        list.value = data
+        total.value = data.length
+      } else {
+        list.value = []
+        total.value = 0
+      }
     } else {
       ElMessage.error(result?.msg || '获取任务列表失败')
     }
@@ -220,6 +272,17 @@ const loadList = async () => {
   } finally {
     loading.value = false
   }
+}
+
+const handlePageChange = (page) => {
+  query.current = page
+  loadList()
+}
+
+const handleSizeChange = (size) => {
+  query.size = size
+  query.current = 1
+  loadList()
 }
 
 const openCreate = () => {
@@ -417,6 +480,19 @@ onUnmounted(() => {
   border: 1px solid #ebeef5;
   border-radius: 12px;
   padding: 12px;
+}
+
+.list-footer {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.footer-text {
+  color: #909399;
+  font-size: 13px;
 }
 
 .log-head {

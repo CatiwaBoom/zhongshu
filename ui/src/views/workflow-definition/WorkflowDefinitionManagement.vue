@@ -9,7 +9,7 @@
     </section>
 
     <section class="list-card" v-loading="loading">
-      <el-table :data="list" style="width: 100%">
+      <el-table :data="pagedList" style="width: 100%">
         <el-table-column prop="name" label="流程名称" min-width="220" />
         <el-table-column prop="code" label="流程编码" width="210" />
         <el-table-column prop="status" label="状态" width="100">
@@ -28,7 +28,23 @@
           </template>
         </el-table-column>
       </el-table>
-      <el-empty v-if="!loading && !list.length" description="暂无流程定义" />
+      <el-empty v-if="!loading && !pagedList.length" description="暂无流程定义" />
+
+      <div class="list-footer" v-if="total !== null || (list && list.length > 0)">
+        <div class="footer-text">
+          显示 {{ pageStart }}-{{ pageEnd }} 条，共 {{ total !== null ? total : (list ? list.length : '--') }} 条
+        </div>
+        <el-pagination
+          background
+          small
+          layout="sizes, prev, pager, next"
+          :current-page="query.current"
+          :page-size="query.size"
+          :total="total || 0"
+          @current-change="handlePageChange"
+          @size-change="handleSizeChange"
+        />
+      </div>
     </section>
 
     <el-dialog v-model="dialogVisible" :title="dialogMode === 'create' ? '新建流程定义' : '编辑流程定义'" width="560px">
@@ -58,7 +74,7 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, RefreshRight } from '@element-plus/icons-vue'
@@ -73,7 +89,12 @@ import {
 const router = useRouter()
 const loading = ref(false)
 const list = ref([])
-const query = reactive({ keyword: '' })
+const total = ref(null)
+const query = reactive({
+  keyword: '',
+  current: 1,
+  size: 10
+})
 
 const dialogVisible = ref(false)
 const dialogMode = ref('create')
@@ -92,6 +113,28 @@ const rules = {
   name: [{ required: true, message: '请输入流程名称', trigger: 'blur' }]
 }
 
+watch(
+  () => query.keyword,
+  () => {
+    query.current = 1
+    loadList()
+  }
+)
+
+const pagedList = computed(() => list.value)
+const pageStart = computed(() => {
+  const t = total.value
+  if (t && t > 0) return (query.current - 1) * query.size + 1
+  if (list.value && list.value.length > 0) return (query.current - 1) * query.size + 1
+  return 0
+})
+const pageEnd = computed(() => {
+  const t = total.value
+  if (t && t > 0) return Math.min(query.current * query.size, t)
+  if (list.value && list.value.length > 0) return pageStart.value + list.value.length - 1
+  return 0
+})
+
 const formatTime = (value) => {
   if (!value) return '--'
   return String(value).replace('T', ' ')
@@ -100,10 +143,25 @@ const formatTime = (value) => {
 const loadList = async () => {
   loading.value = true
   try {
-    const res = await getProcessDefinitionList({ keyword: query.keyword || undefined })
+    const res = await getProcessDefinitionList({
+      keyword: query.keyword || undefined,
+      page: query.current,
+      size: query.size
+    })
     const result = res.data
-    if (result?.code === 200 && Array.isArray(result.data)) {
-      list.value = result.data
+    if (result?.code === 200) {
+      const data = result.data
+      // 兼容分页对象与旧数组结构，避免后端灰度期间页面异常
+      if (data && Array.isArray(data.records)) {
+        list.value = data.records || []
+        total.value = Number(data.total ?? list.value.length)
+      } else if (Array.isArray(data)) {
+        list.value = data
+        total.value = data.length
+      } else {
+        list.value = []
+        total.value = 0
+      }
     } else {
       ElMessage.error(result?.msg || '查询失败')
     }
@@ -112,6 +170,17 @@ const loadList = async () => {
   } finally {
     loading.value = false
   }
+}
+
+const handlePageChange = (page) => {
+  query.current = page
+  loadList()
+}
+
+const handleSizeChange = (size) => {
+  query.size = size
+  query.current = 1
+  loadList()
 }
 
 const openCreate = async () => {
@@ -210,6 +279,22 @@ onMounted(loadList)
 
 .list-card {
   background: #fff;
+  border: 1px solid #eef2f6;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.list-footer {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.footer-text {
+  color: #909399;
+  font-size: 13px;
 }
 </style>
 

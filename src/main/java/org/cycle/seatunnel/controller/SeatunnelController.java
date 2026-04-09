@@ -1,6 +1,7 @@
 package org.cycle.seatunnel.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.extern.slf4j.Slf4j;
 import org.cycle.common.controller.BaseController;
 import org.cycle.common.controller.Result;
@@ -15,7 +16,6 @@ import org.springframework.web.bind.annotation.*;
 import javax.annotation.Resource;
 import java.io.File;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 
 @Slf4j
@@ -72,11 +72,21 @@ public class SeatunnelController extends BaseController {
     }
 
     @GetMapping("/pipeline/list")
-    public Result<List<SeatunnelPipelineEntity>> listPipelines() {
+    public Result<Page<SeatunnelPipelineEntity>> listPipelines(
+            @RequestParam(value = "keyword", required = false) String keyword,
+            @RequestParam(value = "page", defaultValue = "1") Integer page,
+            @RequestParam(value = "size", defaultValue = "10") Integer size
+    ) {
         try {
             QueryWrapper<SeatunnelPipelineEntity> qw = new QueryWrapper<>();
+            String safeKeyword = safeTrim(keyword);
+            if (!safeKeyword.isEmpty()) {
+                // 先按任务名称做模糊查询，后续可按需要扩展到 remark 等字段
+                qw.like("NAME", safeKeyword);
+            }
             qw.orderByDesc("UPDATED_AT");
-            return success(pipelineService.list(qw), "查询成功");
+            Page<SeatunnelPipelineEntity> p = new Page<>(Math.max(1, page), Math.max(1, size));
+            return success(pipelineService.page(p, qw), "查询成功");
         } catch (Exception e) {
             log.error("查询 pipeline 列表失败", e);
             return fail(500, "查询失败: " + e.getMessage());
