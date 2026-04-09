@@ -55,9 +55,12 @@ public class NotificationController extends BaseController {
 
     @GetMapping("/list")
     public Result<NotificationListResponse> list(@RequestParam(value = "page", defaultValue = "1") Long page,
-                                                 @RequestParam(value = "size", defaultValue = "10") Long size) {
+                                                 @RequestParam(value = "size", defaultValue = "10") Long size,
+                                                 @RequestParam(value = "keyword", required = false) String keyword,
+                                                 @RequestParam(value = "isRead", required = false) Integer isRead,
+                                                 @RequestParam(value = "bizType", required = false) String bizType) {
         String userId = getCurrentUserId();
-        return success(notificationService.listMine(userId, page, size), "查询成功");
+        return success(notificationService.listMine(userId, page, size, keyword, isRead, bizType), "查询成功");
     }
 
     @PostMapping("/read/{id}")
@@ -92,4 +95,3 @@ public class NotificationController extends BaseController {
         return authentication.getName();
     }
 }
-

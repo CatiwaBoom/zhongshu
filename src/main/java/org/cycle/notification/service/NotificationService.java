@@ -11,7 +11,7 @@ public interface NotificationService extends IService<NotificationEntity> {
 
     void sendToUsers(String senderId, NotificationSendRequest request);
 
-    NotificationListResponse listMine(String userId, long page, long size);
+    NotificationListResponse listMine(String userId, long page, long size, String keyword, Integer isRead, String bizType);
 
     long countUnread(String userId);
 
@@ -21,4 +21,3 @@ public interface NotificationService extends IService<NotificationEntity> {
 
     List<String> resolveTargetUserIds(String senderId, NotificationSendRequest request);
 }
-

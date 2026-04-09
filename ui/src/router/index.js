@@ -55,6 +55,12 @@ const routes = [
                 name: 'DataSyncTaskManagement',
                 component: () => import('@/views/seatunnel/DataSyncTaskManagement.vue'),
                 meta: { title: '数据同步任务', icon: 'Sort' }
+            },
+            {
+                path: 'notification/inbox',
+                name: 'NotificationInbox',
+                component: () => import('@/views/notification/Inbox.vue'),
+                meta: { title: '站内信收件箱', icon: 'MessageBox' }
             }
         ]
     },

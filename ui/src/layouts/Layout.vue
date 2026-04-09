@@ -41,6 +41,11 @@
             <el-icon><Sort /></el-icon>
             <template #title>数据同步任务</template>
           </el-menu-item>
+
+          <el-menu-item index="/notification/inbox">
+            <el-icon><MessageBox /></el-icon>
+            <template #title>站内信收件箱</template>
+          </el-menu-item>
         </el-menu>
       </el-aside>
 
@@ -48,6 +53,7 @@
         <el-header class="header">
           <div class="header-actions">
             <el-popover
+              v-model:visible="noticeVisible"
               placement="bottom-end"
               trigger="click"
               :width="380"
@@ -109,9 +115,9 @@
 </template>
 
 <script setup>
-import { House, Connection, Files, Operation, Sort, Message } from '@element-plus/icons-vue'
+import { House, Connection, Files, Operation, Sort, Message, MessageBox } from '@element-plus/icons-vue'
 import { useRoute, useRouter } from 'vue-router'
-import { computed, onBeforeUnmount, onMounted } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useNotificationStore } from '@/stores/notification'
 
@@ -120,6 +126,7 @@ const route = useRoute()
 const isFullScreen = computed(() => route.name === 'WorkflowDesigner')
 const notificationStore = useNotificationStore()
 const noticeList = computed(() => notificationStore.latestList)
+const noticeVisible = ref(false)
 
 const formatTime = (value) => {
   if (!value) return '-'
@@ -134,8 +141,10 @@ const formatTime = (value) => {
 }
 
 const markOneRead = async (item) => {
-  if (!item?.id || Number(item.isRead || 0) === 1) return
-  await notificationStore.markRead(item.id)
+  if (!item?.id) return
+  // 未读消息在这里统一跳转收件箱，让用户在完整上下文中处理消息
+  noticeVisible.value = false
+  await router.push({ name: 'NotificationInbox', query: { tab: Number(item.isRead || 0) === 0 ? 'unread' : 'all', focus: item.id } })
 }
 
 const markAllRead = async () => {

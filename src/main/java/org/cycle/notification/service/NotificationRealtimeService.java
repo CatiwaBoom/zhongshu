@@ -1,6 +1,7 @@
 package org.cycle.notification.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jws;
 import lombok.RequiredArgsConstructor;
@@ -50,11 +51,21 @@ public class NotificationRealtimeService {
             return null;
         }
         try {
-            if (!jwtTokenProvider.validateToken(token)) {
-                return null;
-            }
             Jws<Claims> jws = jwtTokenProvider.parseToken(token);
             Claims claims = jws.getBody();
+            String userId = claims.getSubject();
+            String sessionId = claims.getId();
+            if (sessionId == null || !sessionService.isSessionValid(sessionId)) {
+                return null;
+            }
+            return userId;
+        } catch (ExpiredJwtException ex) {
+            // access token 过期时，允许使用 claims 中的 sessionId 继续校验会话有效性。
+            // 这样在 refresh 周期内，SSE 不会因为 access 令牌到期立刻中断并触发“登录失效”体感。
+            Claims claims = ex.getClaims();
+            if (claims == null) {
+                return null;
+            }
             String userId = claims.getSubject();
             String sessionId = claims.getId();
             if (sessionId == null || !sessionService.isSessionValid(sessionId)) {

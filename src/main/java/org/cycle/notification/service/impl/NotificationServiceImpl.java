@@ -86,10 +86,24 @@ public class NotificationServiceImpl extends ServiceImpl<NotificationMapper, Not
     }
 
     @Override
-    public NotificationListResponse listMine(String userId, long page, long size) {
+    public NotificationListResponse listMine(String userId, long page, long size, String keyword, Integer isRead, String bizType) {
         Page<NotificationEntity> pager = new Page<>(Math.max(1, page), Math.max(1, size));
         QueryWrapper<NotificationEntity> qw = new QueryWrapper<>();
-        qw.eq("user_id", userId).orderByDesc("created_at");
+        qw.eq("user_id", userId);
+
+        if (isRead != null && (isRead == 0 || isRead == 1)) {
+            qw.eq("is_read", isRead);
+        }
+        if (StringUtils.hasText(bizType)) {
+            qw.eq("biz_type", bizType.trim());
+        }
+        if (StringUtils.hasText(keyword)) {
+            String kw = keyword.trim();
+            // 标题与内容都支持模糊搜索，便于收件箱快速检索
+            qw.and(w -> w.like("title", kw).or().like("content", kw));
+        }
+
+        qw.orderByDesc("created_at");
 
         Page<NotificationEntity> pageData = this.page(pager, qw);
 
