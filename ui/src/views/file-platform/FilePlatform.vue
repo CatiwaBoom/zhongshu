@@ -2,7 +2,7 @@
   <div class="upload-page">
     <section class="toolbar-card">
       <div class="toolbar-row">
-        <el-input v-model="keyword" class="toolbar-search" placeholder="搜索文件名/MD5..." clearable>
+        <el-input v-model="query.keyword" class="toolbar-search" placeholder="搜索文件名/MD5..." clearable>
           <template #prefix>
             <el-icon><Search /></el-icon>
           </template>
@@ -55,7 +55,7 @@
       </template>
     </el-dialog>
 
-    <div class="table-card">
+      <div class="table-card">
       <div class="table-header">
         <h3>文件管理表</h3>
         <el-button type="primary" plain @click="loadFileList">刷新</el-button>
@@ -75,20 +75,34 @@
           </template>
         </el-table-column>
       </el-table>
+
+      <div class="list-footer" style="margin-top:12px; display:flex; align-items:center; justify-content:space-between">
+        <div class="footer-text">显示 {{ pageStart }}-{{ pageEnd }} 条，共 {{ total !== null ? total : (fileList ? fileList.length : '--') }} 条</div>
+        <el-pagination
+          background
+          small
+          layout="sizes, prev, pager, next"
+          :current-page="query.current"
+          :page-size="query.size"
+          :total="total || 0"
+          @current-change="handlePageChange"
+          @size-change="handleSizeChange"
+        />
+      </div>
     </div>
   </div>
 </template>
 
 <script setup>
 import SparkMD5 from 'spark-md5'
-import { onMounted, ref, reactive } from 'vue'
+import { onMounted, ref, reactive, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Plus } from '@element-plus/icons-vue'
 import { downloadFileObject, getUploadStatus, initFileUpload, listFileObjects, mergeFileUpload, uploadFileChunk, deleteFileObject } from '@/api/filePlatform'
 
 const CHUNK_SIZE = 10 * 1024 * 1024
 
-const keyword = ref('')
+// keyword is stored in query.keyword
 
 const fileInputRef = ref(null)
 const selectedFile = ref(null)
@@ -106,6 +120,8 @@ const uploadFormRef = ref(null)
 const uploadForm = reactive({ fileName: '', description: '' })
 
 const fileList = ref([])
+const total = ref(null)
+const query = reactive({ keyword: '', current: 1, size: 10 })
 
 const openSelect = () => {
   fileInputRef.value?.click()
@@ -309,13 +325,66 @@ const handleDelete = async (row) => {
 
 const loadFileList = async () => {
   try {
-    const res = await listFileObjects({ limit: 100, keyword: keyword.value || undefined })
-    const rows = res?.data?.data
-    fileList.value = Array.isArray(rows) ? rows : []
+    const params = {
+      keyword: query.keyword || undefined,
+      page: query.current,
+      size: query.size
+    }
+    const res = await listFileObjects(params)
+    const result = res?.data
+    if (result?.code === 200) {
+      const data = result.data
+      if (data && Array.isArray(data.records)) {
+        fileList.value = data.records || []
+        let t = undefined
+        if (data.total !== undefined && data.total !== null) t = data.total
+        else if (data.totalCount !== undefined && data.totalCount !== null) t = data.totalCount
+        else if (data.totalElements !== undefined && data.totalElements !== null) t = data.totalElements
+        const tn = Number(t)
+        const reported = (t !== undefined && t !== null && Number.isFinite(tn)) ? tn : 0
+        total.value = Math.max(reported, fileList.value ? fileList.value.length : 0)
+      } else if (Array.isArray(data)) {
+        fileList.value = data
+        total.value = data.length
+      } else if (data && Array.isArray(data.data)) {
+        fileList.value = data.data
+        total.value = (data.total !== undefined && data.total !== null) ? Number(data.total) : fileList.value.length
+      } else {
+        fileList.value = []
+        total.value = 0
+      }
+    } else {
+      ElMessage.error(result?.msg || '获取文件列表失败')
+    }
   } catch (e) {
     ElMessage.error(e?.response?.data?.msg || '查询文件列表失败')
   }
 }
+
+const handlePageChange = (page) => {
+  query.current = page
+  loadFileList()
+}
+
+const handleSizeChange = (size) => {
+  query.size = size
+  query.current = 1
+  loadFileList()
+}
+
+const pageStart = computed(() => {
+  const t = total.value
+  if (t && t > 0) return (query.current - 1) * query.size + 1
+  if (fileList.value && fileList.value.length > 0) return (query.current - 1) * query.size + 1
+  return 0
+})
+
+const pageEnd = computed(() => {
+  const t = total.value
+  if (t && t > 0) return Math.min(query.current * query.size, t)
+  if (fileList.value && fileList.value.length > 0) return pageStart.value + fileList.value.length - 1
+  return 0
+})
 
 const formatSize = (size) => {
   const n = Number(size || 0)

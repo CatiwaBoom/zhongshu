@@ -1,6 +1,7 @@
 package org.cycle.file.controller;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.cycle.common.controller.BaseController;
 import org.cycle.common.controller.Result;
 import org.cycle.file.dto.CompleteUploadRequest;
@@ -26,6 +27,7 @@ import javax.validation.Valid;
 import java.io.IOException;
 import java.util.List;
 
+@Slf4j
 @RestController
 @RequiredArgsConstructor
 @Validated
@@ -75,9 +77,30 @@ public class FilePlatformController extends BaseController {
     }
 
     @GetMapping("/list")
-    public Result<List<FileObjectVO>> list(@RequestParam(value = "keyword", required = false) String keyword,
-                                           @RequestParam(value = "limit", defaultValue = "50") Integer limit) {
-        return success(filePlatformService.listObjects(keyword, limit), "查询成功");
+    public Result<?> list(
+            @RequestParam(value = "keyword", required = false) String keyword,
+            @RequestParam(value = "page", defaultValue = "1") Integer page,
+            @RequestParam(value = "size", defaultValue = "50") Integer size,
+            @RequestParam(value = "compress", defaultValue = "false") Boolean compress
+    ) {
+        try {
+            com.baomidou.mybatisplus.extension.plugins.pagination.Page<FileObjectVO> result = filePlatformService.listObjects(keyword, page, size);
+
+            if (compress != null && compress) {
+                java.util.Map<String, Object> compressed = new java.util.HashMap<>();
+                compressed.put("total", result.getTotal());
+                compressed.put("current", result.getCurrent());
+                compressed.put("size", result.getSize());
+                compressed.put("pages", result.getPages());
+                compressed.put("data", result.getRecords());
+                return success(compressed, "查询成功");
+            }
+
+            return success(result, "查询成功");
+        } catch (Exception e) {
+            log.error("查询文件列表失败", e);
+            return fail(500, "查询文件列表失败：" + e.getMessage());
+        }
     }
 
     @GetMapping("/download/{fileId}")

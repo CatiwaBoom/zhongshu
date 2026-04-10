@@ -1,6 +1,7 @@
 package org.cycle.file.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -255,16 +256,46 @@ public class FilePlatformServiceImpl implements FilePlatformService {
     }
 
     @Override
-    public List<FileObjectVO> listObjects(String keyword, Integer limit) {
-        int realLimit = limit == null ? 50 : Math.max(1, Math.min(limit, 200));
+    public Page<FileObjectVO> listObjects(String keyword, Integer page, Integer size) {
+        // 若未传分页参数，默认返回前100条（兼容旧调用）
+        if (page == null || size == null) {
+            int realLimit =  limitOrDefault(50);
+            QueryWrapper<FileObjectEntity> qw = new QueryWrapper<>();
+            qw.eq("status", 1);
+            if (StringUtils.hasText(keyword)) {
+                qw.and(w -> w.like("file_name", keyword.trim()).or().like("file_md5", keyword.trim()));
+            }
+            qw.orderByDesc("created_at").last("FETCH FIRST " + realLimit + " ROWS ONLY");
+            List<FileObjectEntity> entities = fileObjectMapper.selectList(qw);
+            List<FileObjectVO> vos = entities.stream().map(this::toVo).collect(Collectors.toList());
+            Page<FileObjectVO> p = new Page<>(1, vos.size());
+            p.setRecords(vos);
+            p.setTotal(vos.size());
+            return p;
+        }
+
+        int realSize = Math.max(1, Math.min(size == null ? 10 : size, 200));
+        int realPage = Math.max(1, page == null ? 1 : page);
         QueryWrapper<FileObjectEntity> qw = new QueryWrapper<>();
         qw.eq("status", 1);
         if (StringUtils.hasText(keyword)) {
             qw.and(w -> w.like("file_name", keyword.trim()).or().like("file_md5", keyword.trim()));
         }
-        qw.orderByDesc("created_at").last("FETCH FIRST " + realLimit + " ROWS ONLY");
-        List<FileObjectEntity> entities = fileObjectMapper.selectList(qw);
-        return entities.stream().map(this::toVo).collect(Collectors.toList());
+        qw.orderByDesc("created_at");
+
+        com.baomidou.mybatisplus.extension.plugins.pagination.Page<FileObjectEntity> qpage =
+                new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(realPage, realSize);
+        com.baomidou.mybatisplus.extension.plugins.pagination.Page<FileObjectEntity> result =
+                fileObjectMapper.selectPage(qpage, qw);
+
+        Page<FileObjectVO> voPage = new Page<>(result.getCurrent(), result.getSize(), result.getTotal());
+        List<FileObjectVO> vos = result.getRecords().stream().map(this::toVo).collect(Collectors.toList());
+        voPage.setRecords(vos);
+        return voPage;
+    }
+
+    private int limitOrDefault(int def) {
+        return def;
     }
 
     @Override
