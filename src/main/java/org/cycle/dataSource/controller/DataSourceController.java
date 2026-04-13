@@ -10,6 +10,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
+import javax.annotation.Resource;
+import org.cycle.dataSource.dto.SchemaMetaDTO;
+import org.cycle.dataSource.service.DataSourceMetaService;
+import java.util.List;
 
 /**
  * 数据源管理Controller
@@ -22,6 +26,9 @@ public class DataSourceController extends BaseController {
 
     @Resource
     private DataSourceService dataSourceService;
+
+    @Resource
+    private DataSourceMetaService dataSourceMetaService;
 
     /**
      * 根据ID查询数据源详情
@@ -203,6 +210,51 @@ public class DataSourceController extends BaseController {
         } catch (Exception e) {
             log.error("查询数据源列表失败", e);
             return fail(500, "查询数据源列表失败：" + e.getMessage());
+        }
+    }
+
+    /**
+     * 列出指定数据源下的 schema（或 catalog）列表，供前端选择目标模式
+     */
+    @GetMapping("/{id}/schemas")
+    public Result<?> listSchemas(@PathVariable("id") String id) {
+        if (id == null || id.trim().isEmpty()) return fail(400, "数据源ID不能为空");
+        try {
+            List<SchemaMetaDTO> schemas = dataSourceMetaService.listSchemas(id);
+            return success(schemas, "查询成功");
+        } catch (Exception e) {
+            log.error("查询数据源 schema 列表失败, id={}", id, e);
+            return fail(500, "查询数据源 schema 列表失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 检查指定数据源下某个 schema/catalog 中是否已存在给定表名
+     * 用于在生成 DDL 前检测目标模式是否已存在同名表，避免覆盖
+     */
+    @GetMapping("/{id}/tables/exists")
+    public Result<?> checkTableExists(@PathVariable("id") String id,
+                                      @RequestParam(value = "schema", required = false) String schema,
+                                      @RequestParam(value = "tableName") String tableName) {
+        if (id == null || id.trim().isEmpty()) return fail(400, "数据源ID不能为空");
+        if (tableName == null || tableName.trim().isEmpty()) return fail(400, "tableName 不能为空");
+        try {
+            List<org.cycle.dataSource.dto.TableMetaDTO> tables = dataSourceMetaService.listTables(id, schema, tableName);
+            boolean exists = false;
+            if (tables != null) {
+                for (org.cycle.dataSource.dto.TableMetaDTO t : tables) {
+                    if (t != null && tableName.equalsIgnoreCase(t.getName())) {
+                        exists = true;
+                        break;
+                    }
+                }
+            }
+            java.util.Map<String, Object> payload = new java.util.HashMap<>();
+            payload.put("exists", exists);
+            return success(payload, "查询成功");
+        } catch (Exception e) {
+            log.error("检查表是否存在失败, id={}, schema={}, table={}", id, schema, tableName, e);
+            return fail(500, "检查表是否存在失败: " + e.getMessage());
         }
     }
 }

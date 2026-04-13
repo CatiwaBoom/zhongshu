@@ -37,6 +37,11 @@
             <template #title>流程定义</template>
           </el-menu-item>
 
+          <el-menu-item index="/models">
+            <el-icon><Document /></el-icon>
+            <template #title>数据模型管理</template>
+          </el-menu-item>
+
           <el-menu-item index="/seatunnel/pipeline">
             <el-icon><Operation /></el-icon>
             <template #title>数据采集任务</template>
@@ -122,13 +127,32 @@
 <script setup>
 import { House, Connection, FolderOpened, User, Document, Operation, Sort, Message, MessageBox } from '@element-plus/icons-vue'
 import { useRoute, useRouter } from 'vue-router'
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useNotificationStore } from '@/stores/notification'
 
 const router = useRouter()
 const route = useRoute()
-const isFullScreen = computed(() => route.name === 'WorkflowDesigner')
+// 全屏页面判断：工作流设计器及创建/编辑数据模型页面需使用全屏布局，隐藏侧栏与头部
+// 同时支持路由名称和路径匹配，避免路由 name 未生效时无法切换到全屏
+const isFullScreen = computed(() => {
+  const name = route.name
+  const path = route.path || ''
+  if (name === 'WorkflowDesigner' || name === 'DataModelCreate' || name === 'DataModelEdit') return true
+  // 匹配 /models/create 或 /models/:id/edit（支持 id 为任意字符串）
+  if (path === '/models/create') return true
+  if (/^\/models\/[^\/]+\/edit/.test(path)) return true
+  return false
+})
+
+// 当进入全屏页面时，隐藏 body 滚动（避免出现底部滚动条）；离开时恢复
+watch(isFullScreen, (v) => {
+  try {
+    document.body.style.overflow = v ? 'hidden' : ''
+  } catch (e) {
+    // ignore
+  }
+})
 const notificationStore = useNotificationStore()
 const noticeList = computed(() => notificationStore.latestList)
 const noticeVisible = ref(false)
@@ -177,6 +201,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   notificationStore.stop()
+  try { document.body.style.overflow = '' } catch (e) {}
 })
 </script>
 
@@ -339,8 +364,11 @@ onBeforeUnmount(() => {
 }
 
 .full-screen-wrapper {
-  height: 100vh;
+  position: fixed;
+  inset: 0; /* top/right/bottom/left = 0 */
   width: 100%;
+  height: 100%;
   background: #fff;
+  overflow: hidden; /* 由全屏子元素内部控制滚动 */
 }
 </style>

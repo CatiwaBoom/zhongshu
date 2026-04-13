@@ -68,6 +68,26 @@ const routes = [
                 component: () => import('@/views/notification/Inbox.vue'),
                 meta: { title: '站内信收件箱', icon: 'MessageBox' }
             }
+            ,
+            {
+                path: 'models',
+                name: 'DataModelManagement',
+                component: () => import('@/views/data-model/List.vue'),
+                meta: { title: '数据模型管理', icon: 'Document' }
+            }
+            ,
+            {
+                path: 'models/create',
+                name: 'DataModelCreate',
+                component: () => import('@/views/data-model/Form.vue'),
+                meta: { title: '创建数据模型', hidden: true }
+            },
+            {
+                path: 'models/:id/edit',
+                name: 'DataModelEdit',
+                component: () => import('@/views/data-model/Form.vue'),
+                meta: { title: '编辑数据模型', hidden: true }
+            }
         ]
     },
     {

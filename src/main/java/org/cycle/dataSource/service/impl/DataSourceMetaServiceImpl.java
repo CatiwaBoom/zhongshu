@@ -231,7 +231,7 @@ public class DataSourceMetaServiceImpl implements DataSourceMetaService {
 
         String resolvedDriver = !isBlank(driver) ? driver : inferDriverByUrl(url);
         if (!isBlank(resolvedDriver)) {
-            JdbcDriverLoader.loadDriver(resolvedDriver, "E:\\项目\\数据中台\\代码\\dataSpace\\drivers");
+            JdbcDriverLoader.loadDriver(resolvedDriver, org.cycle.dataSource.util.DriverPathUtils.getDriversDir());
         }
         return DriverManager.getConnection(url, username, password);
     }
