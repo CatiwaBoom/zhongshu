@@ -10,9 +10,6 @@
     </section>
 
     <section class="list-card">
-      <div class="list-header">
-        <h2>模型列表</h2>
-      </div>
       <div class="list-body" v-loading="loading">
         <el-table :data="list" style="width: 100%">
           <el-table-column prop="name" label="模型名称" />
