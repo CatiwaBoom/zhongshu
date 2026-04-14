@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
 import Layout from '@/layouts/Layout.vue'
+import { usePermissionStore } from '@/stores/permission'
 
 const routes = [
     {
@@ -12,7 +13,6 @@ const routes = [
     {
         path: '/',
         component: Layout,
-        redirect: '/dashboard',
         children: [
             {
                 path: 'dashboard',
@@ -69,6 +69,19 @@ const routes = [
                 meta: { title: '站内信收件箱', icon: 'MessageBox' }
             }
             ,
+            // 系统管理模块：角色管理与系统菜单管理（路由已注册，菜单可由后端权限控制展示）
+            {
+                path: 'admin/roles',
+                name: 'RoleManagement',
+                component: () => import('@/views/admin/RoleManagement.vue'),
+                meta: { title: '角色管理', icon: 'User' }
+            },
+            {
+                path: 'admin/menus',
+                name: 'SystemMenuManagement',
+                component: () => import('@/views/admin/SystemMenuManagement.vue'),
+                meta: { title: '系统菜单', icon: 'Document' }
+            },
             {
                 path: 'models',
                 name: 'DataModelManagement',
@@ -101,13 +114,38 @@ const router = createRouter({
     routes
 })
 
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to, from, next) => {
     const token = localStorage.getItem('token')
     if (to.name !== 'Login' && !token) {
         next({ name: 'Login' })
-    } else {
-        next()
+        return
     }
+
+    // 若已登录但权限菜单尚未加载，主动拉取（支持页面刷新后仍能获取菜单）
+    if (token) {
+        try {
+            const perm = usePermissionStore()
+            if (!perm.menuTree || perm.menuTree.length === 0) {
+                await perm.loadMenus()
+            }
+            // 若用户访问根路径，则根据权限菜单决定默认跳转
+            if (to.path === '/') {
+                // 优先跳转到角色管理或系统菜单管理（若用户有权限）
+                const available = (perm.menuTree || []).flatMap(m => [m].concat(m.children || []))
+                const hasRole = available.some(m => m.path === '/admin/roles')
+                const hasMenu = available.some(m => m.path === '/admin/menus')
+                if (hasRole) { next({ path: '/admin/roles' }); return }
+                if (hasMenu) { next({ path: '/admin/menus' }); return }
+                // 否则跳到第一个有 path 的菜单或回退到 dashboard
+                const first = available.find(m => m.path)
+                if (first && first.path) { next({ path: first.path }); return }
+            }
+        } catch (e) {
+            // ignore
+        }
+    }
+
+    next()
 })
 
 export default router

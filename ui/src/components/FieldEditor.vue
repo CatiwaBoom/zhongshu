@@ -295,7 +295,5 @@ const onNullableChange = (row) => {
 .field-actions { margin-bottom: 8px }
 
 .action-buttons { display: flex; gap: 8px; align-items: center; justify-content: center }
-.action-buttons .el-button { padding: 0; width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center }
-.action-buttons .el-button[disabled] { opacity: 0.45 }
 </style>
 

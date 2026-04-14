@@ -55,10 +55,13 @@ import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import request from '@/utils/request'
+import { usePermissionStore } from '@/stores/permission'
+import { getMyMenusVersion } from '@/api/role'
 
 const router = useRouter()
 const formRef = ref()
 const loading = ref(false)
+const permissionStore = usePermissionStore()
 
 const form = reactive({
   username: 'admin',
@@ -87,17 +90,48 @@ const handleLogin = async () => {
 
       const data = res.data
       // AuthController 返回 LoginResponse（非封装），但在代理或网关场景下可能被包装在 data 字段中
-      const accessToken = data?.accessToken || data?.data?.accessToken
-      if (accessToken) {
+        const accessToken = data?.accessToken || data?.data?.accessToken
+        if (accessToken) {
         localStorage.setItem('token', accessToken)
+        // 保存完整的用户对象（后端在 AuthController 已返回 user 字段，敏感字段已清理）
+        try {
+          const returnedUser = data?.user || data?.data?.user
+          if (returnedUser) {
+            localStorage.setItem('currentUser', JSON.stringify(returnedUser))
+            if (returnedUser.displayName) localStorage.setItem('displayName', returnedUser.displayName)
+            if (returnedUser.username) localStorage.setItem('username', returnedUser.username)
+          } else {
+            const returnedDisplayName = data?.displayName || data?.data?.displayName || form.username
+            if (returnedDisplayName) localStorage.setItem('displayName', returnedDisplayName)
+            localStorage.setItem('username', form.username)
+          }
+        } catch (e) {}
         // 若返回包含 refreshToken 和 sessionId，则一并保存以支持自动续签
         const refreshToken = data?.refreshToken || data?.data?.refreshToken
         const sessionId = data?.sessionId || data?.data?.sessionId
         if (refreshToken) localStorage.setItem('refreshToken', refreshToken)
         if (sessionId) localStorage.setItem('sessionId', sessionId)
-        localStorage.setItem('username', form.username)
-        ElMessage.success('登录成功')
-        router.push('/dashboard')
+        // 如果后端在登录响应中返回了 roleIds（角色 id 列表），把它像 token 一样存起来
+          try {
+            const roleIds = data?.roleIds || data?.data?.roleIds
+            if (roleIds && Array.isArray(roleIds)) {
+              localStorage.setItem('roleIds', JSON.stringify(roleIds))
+            } else if (roleIds && typeof roleIds === 'string') {
+              localStorage.setItem('roleIds', JSON.stringify([roleIds]))
+            }
+          } catch (e) {}
+            // 登录成功后主动拉取当前用户的菜单权限（后端应基于 token 返回对应角色/菜单）
+              try {
+                // 尝试读取并保存当前 menus version，便于前端后续轮询对比
+                try {
+                  const vresp = await getMyMenusVersion()
+                  const v = vresp && vresp.data
+                  if (v !== undefined && v !== null) localStorage.setItem('menusVersion', String(v))
+                } catch (e) {}
+                await permissionStore.loadMenus()
+              } catch (e) {}
+          ElMessage.success('登录成功')
+          router.push('/dashboard')
       } else {
         // 兼容旧接口：回退处理旧版本 /user/login 的封装响应格式
         const wrapped = data
@@ -105,6 +139,7 @@ const handleLogin = async () => {
           const token = wrapped.data?.token || wrapped.data?.accessToken
           if (token) {
             localStorage.setItem('token', token)
+            if (wrapped.data?.displayName) localStorage.setItem('displayName', wrapped.data.displayName)
             // 旧的封装响应中可能包含 refreshToken/sessionId，一并保存以兼容旧客户端
             const r = wrapped.data?.refreshToken || wrapped.data?.data?.refreshToken
             const sid = wrapped.data?.sessionId || wrapped.data?.data?.sessionId
@@ -112,6 +147,7 @@ const handleLogin = async () => {
             if (sid) localStorage.setItem('sessionId', sid)
             if (wrapped.data?.username) localStorage.setItem('username', wrapped.data.username)
             ElMessage.success('登录成功')
+            try { await permissionStore.loadMenus() } catch (e) {}
             router.push('/dashboard')
             return
           }

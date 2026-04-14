@@ -1,18 +1,19 @@
-package org.cycle.common.config;
+package org.cycle.config;
 
 import com.baomidou.mybatisplus.core.handlers.MetaObjectHandler;
 import org.apache.ibatis.reflection.MetaObject;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.stereotype.Component;
-
+ 
 import java.sql.Timestamp;
 
 /**
- * MyBatis-Plus 自动填充处理器：为实体的 createdBy/updatedBy/createdAt/updatedAt 自动赋值
+ * MyBatis-Plus 自动填充处理器
+ *
+ * 在插入/更新时自动填充 createdBy / updatedBy 和 createdAt / updatedAt 字段
+ * 根据当前 SecurityContext 中的 Authentication 读取当前用户 id（insert/update 时）
  */
-@Component
-public class MyMetaObjectHandler implements MetaObjectHandler {
+public class MybatisPlusMetaObjectHandler implements MetaObjectHandler {
 
     private String getCurrentUserId() {
         try {
@@ -28,35 +29,29 @@ public class MyMetaObjectHandler implements MetaObjectHandler {
                 return auth.getName();
             }
         } catch (Exception ignored) {
-            // 无安全上下文时使用默认值
+            // 在没有安全上下文（如后台任务）时返回默认值
         }
         return "system";
     }
 
     @Override
     public void insertFill(MetaObject metaObject) {
-        // 仅在字段为空时填充 createdAt，updatedAt 总是填充为当前时间
-        Object created = this.getFieldValByName("createdAt", metaObject);
-        Timestamp now = new Timestamp(System.currentTimeMillis());
-        if (created == null) {
-            // 使用严格填充以兼容 MyBatis-Plus 的校验
-            this.strictInsertFill(metaObject, "createdAt", Timestamp.class, now);
-        }
-        this.strictInsertFill(metaObject, "updatedAt", Timestamp.class, now);
-
-        // 填充 createdBy/updatedBy
         String user = getCurrentUserId();
+        // 填充创建/更新人
         this.strictInsertFill(metaObject, "createdBy", String.class, user);
         this.strictInsertFill(metaObject, "updatedBy", String.class, user);
+
+        // 填充创建/更新时间（使用 Timestamp 与 BaseEntity 字段类型匹配）
+        Timestamp now = new Timestamp(System.currentTimeMillis());
+        this.strictInsertFill(metaObject, "createdAt", Timestamp.class, now);
+        this.strictInsertFill(metaObject, "updatedAt", Timestamp.class, now);
     }
 
     @Override
     public void updateFill(MetaObject metaObject) {
-        Timestamp now = new Timestamp(System.currentTimeMillis());
-        this.strictUpdateFill(metaObject, "updatedAt", Timestamp.class, now);
-
         String user = getCurrentUserId();
         this.strictUpdateFill(metaObject, "updatedBy", String.class, user);
+        this.strictUpdateFill(metaObject, "updatedAt", Timestamp.class, new Timestamp(System.currentTimeMillis()));
     }
 }
 

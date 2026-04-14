@@ -181,14 +181,40 @@ function handleAuthExpired() {
     }
 }
 
+// 响应拦截：兼容后端在 HTTP 200 中通过 data.code === 401 表示鉴权失效的情况。
+// 在检测到 data.code === 401 时，优先尝试一次使用 refresh token 刷新并重试原请求，
+// 仅在刷新失败或已重试过一次仍失败时才触发统一登出流程。
 request.interceptors.response.use(
-    (response) => {
-            const data = response && response.data
-            // 有些后端会在 HTTP 200 的响应中通过 data.code === 401 表示鉴权失败，兼容此种情况
-            if (data && (data.code === 401 || data.code === '401')) {
-                handleAuthExpired()
-                return Promise.reject(new Error('Unauthorized'))
+    async (response) => {
+        const data = response && response.data
+        if (data && (data.code === 401 || data.code === '401')) {
+            const originalConfig = response.config || {}
+            // 避免无限重试：使用自定义标记记录是否已重试过
+            if (!originalConfig.__retried) {
+                originalConfig.__retried = true
+                try {
+                    // 尝试刷新 token（ensureFreshToken 已实现 single-flight）
+                    await ensureFreshToken(originalConfig)
+                    // 刷新后从本地取最新 token 并更新 header
+                    const newToken = localStorage.getItem('token')
+                    if (newToken) {
+                        originalConfig.headers = originalConfig.headers || {}
+                        originalConfig.headers.Authorization = `Bearer ${newToken}`
+                    }
+                    // 重试原请求一次
+                    return request(originalConfig)
+                } catch (e) {
+                    // 刷新或重试失败，走统一下线流程
+                    handleAuthExpired()
+                    return Promise.reject(e)
+                }
             }
+
+            // 已经重试过一次仍然是 401，执行统一下线
+            handleAuthExpired()
+            return Promise.reject(new Error('Unauthorized'))
+        }
+
         return response
     },
     (error) => {
