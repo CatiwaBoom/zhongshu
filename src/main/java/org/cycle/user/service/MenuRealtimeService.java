@@ -1,4 +1,4 @@
-package org.cycle.menu.service;
+package org.cycle.user.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.jsonwebtoken.Claims;
@@ -7,7 +7,6 @@ import io.jsonwebtoken.Jws;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.cycle.security.JwtTokenProvider;
-import org.cycle.user.service.SessionService;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 

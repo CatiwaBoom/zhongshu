@@ -4,6 +4,7 @@ import org.cycle.common.controller.BaseController;
 import org.cycle.common.controller.Result;
 import org.cycle.user.entity.RoleEntity;
 import org.cycle.user.mapper.RoleMapper;
+import org.cycle.user.service.MenuRealtimeService;
 import org.cycle.user.service.RoleService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.cycle.user.mapper.RoleMenuMapper;
@@ -11,12 +12,10 @@ import org.cycle.user.entity.RoleMenuEntity;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.web.bind.annotation.RequestBody;
 
-import java.util.UUID;
-import java.util.ArrayList;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
-import java.util.List;
+import java.util.*;
 
 @RestController
 @RequestMapping("/roles")
@@ -33,6 +32,9 @@ public class RoleController extends BaseController {
 
     @Autowired(required = false)
     private RedisTemplate<String, Object> redisTemplate;
+
+    @Resource
+    private MenuRealtimeService menuRealtimeService;
 
     @GetMapping("")
     public Result<List<RoleEntity>> list() {
@@ -51,7 +53,7 @@ public class RoleController extends BaseController {
     public Result<Void> create(@RequestBody RoleEntity req) {
         try {
             if (req.getId() == null || req.getId().trim().isEmpty()) req.setId(UUID.randomUUID().toString());
-            // ensure code is set to avoid DB NOT NULL constraint; if not provided, derive from name or use a UUID
+            
             if (req.getCode() == null || req.getCode().trim().isEmpty()) {
                 String name = req.getName();
                 if (name != null && !name.trim().isEmpty()) {
@@ -118,11 +120,18 @@ public class RoleController extends BaseController {
         public List<String> userIds;
     }
 
-    // 为角色分配用户（覆盖式）
+    // 为角色分配用户
     @PostMapping("/{id}/users")
     public Result<Void> assignUsersToRole(@PathVariable String id, @RequestBody AssignUsersRequest req) {
         try {
-            // 删除已有关联
+            // 读取变更前的用户列表（以便同时通知被移除和新增的用户）
+            List<String> beforeUserIds;
+            try {
+                beforeUserIds = roleMapper.selectUserIdsByRoleId(id);
+                if (beforeUserIds == null) beforeUserIds = new ArrayList<>();
+            } catch (Exception ignored) { beforeUserIds = new ArrayList<>(); }
+
+            // 删除已有关联并插入新的关联
             roleMapper.deleteUserRolesByRoleId(id);
             if (req != null && req.userIds != null && !req.userIds.isEmpty()) {
                 for (String uid : req.userIds) {
@@ -131,13 +140,30 @@ public class RoleController extends BaseController {
                 }
             }
 
-            // 清理受影响用户的角色缓存
+            // 计算受影响的用户集合（并去重）
+            Set<String> affected = new HashSet<>();
+            if (beforeUserIds != null) affected.addAll(beforeUserIds);
+            if (req != null && req.userIds != null) affected.addAll(req.userIds);
+
+            // 清理受影响用户的角色缓存并推送菜单更新事件
             try {
                 if (redisTemplate != null) {
-                    if (req != null && req.userIds != null) {
-                        for (String uid : req.userIds) {
-                            try { redisTemplate.delete("user:roles:" + uid); } catch (Exception ignored) {}
-                        }
+                    for (String uid : affected) {
+                        try { redisTemplate.delete("user:roles:" + uid); } catch (Exception ignored) {}
+                    }
+                }
+            } catch (Exception ignored) {}
+
+            try {
+                if (menuRealtimeService != null) {
+                    for (String uid : affected) {
+                        try {
+                            Map<String, Object> payload = new HashMap<>();
+                            payload.put("type", "roleAssignment");
+                            payload.put("roleId", id);
+                            payload.put("ts", System.currentTimeMillis());
+                            menuRealtimeService.pushMenuUpdate(uid, payload);
+                        } catch (Exception ignored) {}
                     }
                 }
             } catch (Exception ignored) {}
@@ -178,6 +204,16 @@ public class RoleController extends BaseController {
                         // 增加一个 menusVersion key，前端可以轮询该版本号以感知权限变化
                         for (String uid : userIds) {
                             try { redisTemplate.opsForValue().increment("user:menusVersion:" + uid, 1L); } catch (Exception ignored) {}
+                            // 同时通过 SSE 主动通知在线用户刷新菜单
+                            try {
+                                if (menuRealtimeService != null) {
+                                    Map<String, Object> payload = new HashMap<>();
+                                    payload.put("type", "roleMenuChange");
+                                    payload.put("roleId", id);
+                                    payload.put("ts", System.currentTimeMillis());
+                                    menuRealtimeService.pushMenuUpdate(uid, payload);
+                                }
+                            } catch (Exception ignored) {}
                         }
                     }
                 }
