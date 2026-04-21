@@ -390,28 +390,6 @@ public class UserController extends BaseController {
             return fail(500, "查询失败：" + e.getMessage());
         }
     }
-
-    // 返回当前用户的 menusVersion（用于前端检测角色菜单变更）
-    @GetMapping("/menus/version")
-    public Result<Long> getMenusVersion() {
-        try {
-            // 从 SecurityContext 中获取当前用户 id
-            org.springframework.security.core.Authentication auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
-            if (auth == null || auth.getPrincipal() == null) return success(0L);
-            String userId = String.valueOf(auth.getPrincipal());
-            if (userId == null || userId.trim().isEmpty()) return success(0L);
-
-            Long v = 0L;
-            try {
-                Object o = redisTemplate.opsForValue().get("user:menusVersion:" + userId);
-                if (o instanceof Number) v = ((Number) o).longValue();
-                else if (o instanceof String) v = Long.parseLong((String) o);
-            } catch (Exception ignored) {}
-            return success(v == null ? 0L : v);
-        } catch (Exception ex) {
-            return fail(500, "读取菜单版本失败：" + ex.getMessage());
-        }
-    }
 }
 
 

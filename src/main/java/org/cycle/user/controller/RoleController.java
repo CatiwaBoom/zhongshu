@@ -203,8 +203,7 @@ public class RoleController extends BaseController {
                         }
                         // 增加一个 menusVersion key，前端可以轮询该版本号以感知权限变化
                         for (String uid : userIds) {
-                            try { redisTemplate.opsForValue().increment("user:menusVersion:" + uid, 1L); } catch (Exception ignored) {}
-                            // 同时通过 SSE 主动通知在线用户刷新菜单
+                            // 通过 SSE 主动通知在线用户刷新菜单（移除了 menusVersion 的 Redis 自增，改用 SSE）
                             try {
                                 if (menuRealtimeService != null) {
                                     Map<String, Object> payload = new HashMap<>();

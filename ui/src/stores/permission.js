@@ -100,7 +100,7 @@ export const usePermissionStore = defineStore('permission', () => {
     try {
       const token = localStorage.getItem('token')
       if (!token) return
-      const url = (window.location.origin || '') + '/menus/stream?token=' + encodeURIComponent(token)
+      const url = (window.location.origin || '') + '/api/menus/stream?token=' + encodeURIComponent(token)
       _eventSource = new EventSource(url)
       _eventSource.addEventListener('open', () => {
         // reset reconnect strategy

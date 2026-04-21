@@ -56,7 +56,6 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import request from '@/utils/request'
 import { usePermissionStore } from '@/stores/permission'
-import { getMyMenusVersion } from '@/api/role'
 
 const router = useRouter()
 const formRef = ref()
@@ -122,12 +121,7 @@ const handleLogin = async () => {
           } catch (e) {}
             // 登录成功后主动拉取当前用户的菜单权限（后端应基于 token 返回对应角色/菜单）
               try {
-                // 尝试读取并保存当前 menus version，便于前端后续轮询对比
-                try {
-                  const vresp = await getMyMenusVersion()
-                  const v = vresp && vresp.data
-                  if (v !== undefined && v !== null) localStorage.setItem('menusVersion', String(v))
-                } catch (e) {}
+                // 使用 SSE 推送的方式刷新菜单并初始化
                 await permissionStore.loadMenus()
               } catch (e) {}
           ElMessage.success('登录成功')

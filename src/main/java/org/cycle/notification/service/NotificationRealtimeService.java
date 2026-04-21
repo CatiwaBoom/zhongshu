@@ -12,6 +12,7 @@ import org.cycle.user.service.SessionService;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import javax.annotation.PostConstruct;
 import javax.annotation.PreDestroy;
 import java.io.IOException;
 import java.util.List;
@@ -40,7 +41,7 @@ public class NotificationRealtimeService {
         return t;
     });
 
-    @javax.annotation.PostConstruct
+    @PostConstruct
     public void startHeartbeat() {
         heartbeatExecutor.scheduleAtFixedRate(this::broadcastHeartbeat, 20, 20, TimeUnit.SECONDS);
     }

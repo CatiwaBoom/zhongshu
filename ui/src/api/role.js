@@ -39,9 +39,6 @@ export const assignRoleUsers = (roleId, userIds) => {
   return request.post(`/roles/${roleId}/users`, { userIds })
 }
 
-// 前端轮询用：获取当前用户的 menus version，用于检测角色菜单分配变更
-export const getMyMenusVersion = () => {
-  return request.get('/user/menus/version')
-}
+// NOTE: menus version polling 已移除，前端改为使用 SSE 实时推送
 
 

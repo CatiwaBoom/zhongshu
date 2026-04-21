@@ -48,7 +48,7 @@ public class MenuController extends BaseController {
             return success(null, "请使用 role 规则分发给受影响用户，或逐个 userId 调用此接口（已接收请求）");
         }
         String userId = String.valueOf(uid);
-        java.util.Map<String, Object> payload = new java.util.HashMap<>();
+        Map<String, Object> payload = new HashMap<>();
         payload.put("type", "menuUpdate");
         payload.put("ts", System.currentTimeMillis());
         menuRealtimeService.pushMenuUpdate(userId, payload);
