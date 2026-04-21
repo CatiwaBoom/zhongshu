@@ -166,15 +166,77 @@ function handleAuthExpired() {
 
     // 使用 Element Plus 的对话框提示用户重新登录
     if (ElMessageBox && typeof ElMessageBox.alert === 'function') {
-        ElMessageBox.alert('登录失效，请重新登录', '提示', {
-            confirmButtonText: '确定',
+        // 提示用户登录状态已过期，点击确认后跳转登录
+        ElMessageBox.alert('登录状态过期', '提示', {
+            confirmButtonText: '确认',
             closeOnClickModal: false,
             closeOnPressEscape: false
         }).then(redirectToLogin).catch(redirectToLogin)
     } else {
         // 兜底：浏览器 alert
         try {
-            window.alert('登录失效，请重新登录')
+            window.alert('登录状态过期')
+        } finally {
+            redirectToLogin()
+        }
+    }
+}
+
+// 处理后端不可用（例如 502/503/网络不可达）情况下的统一提示与跳转
+function handleServerUnavailable() {
+    // 避免重复弹窗/跳转
+    if (isReloginShowing) return
+    isReloginShowing = true
+
+    // 清理本地认证/会话相关信息，但保留与登录状态语义不同的提示
+    try {
+        localStorage.removeItem('token')
+        localStorage.removeItem('user')
+    } catch (e) {}
+    try {
+        localStorage.removeItem('refreshToken')
+        localStorage.removeItem('sessionId')
+        localStorage.removeItem('lastActivity')
+    } catch (e) {}
+
+    const redirectToLogin = () => {
+        isReloginShowing = false
+        try {
+            const current = router.currentRoute && router.currentRoute.value
+            if (current && current.name === 'Login') return
+            setTimeout(() => {
+                try {
+                    router.replace({ name: 'Login' })
+                } catch (e) {
+                    window.location.href = '/login'
+                    return
+                }
+                setTimeout(() => {
+                    try {
+                        const now = router.currentRoute && router.currentRoute.value
+                        if (!now || now.name !== 'Login') {
+                            window.location.href = '/login'
+                        }
+                    } catch (e) {
+                        window.location.href = '/login'
+                    }
+                }, 250)
+            }, 50)
+        } catch (e) {
+            window.location.href = '/login'
+        }
+    }
+
+    // 使用 Element Plus 的对话框提示用户服务器不可用
+    if (ElMessageBox && typeof ElMessageBox.alert === 'function') {
+        ElMessageBox.alert('服务器当前不可用。请稍后重新登录。', '提示', {
+            confirmButtonText: '确认',
+            closeOnClickModal: false,
+            closeOnPressEscape: false
+        }).then(redirectToLogin).catch(redirectToLogin)
+    } else {
+        try {
+            window.alert('服务器当前不可用，正在跳转到登录页')
         } finally {
             redirectToLogin()
         }
@@ -219,11 +281,28 @@ request.interceptors.response.use(
     },
     (error) => {
         const status = error && error.response && error.response.status
+
+        // 情形 1：没有 response（网络错误 / 代理不可达 / CORS / 超时 等），视为后端不可用
+        // 情形 2：后端返回 5xx（例如 502/503 等），也视为后端不可用
+        if (!error.response || (typeof status === 'number' && status >= 500)) {
+            // 清理挂起的刷新承诺，避免后续请求被阻塞
+            refreshPromise = null
+            try {
+                handleServerUnavailable()
+            } catch (e) {
+                // 保底：若处理逻辑抛出异常，仍然保证请求被拒绝
+                console.error('handleServerUnavailable failed', e)
+            }
+            return Promise.reject(error)
+        }
+
+        // 正常的 401 处理（鉴权失效）
         if (status === 401) {
             // 清理挂起的刷新承诺，避免后续请求被阻塞
             refreshPromise = null
             handleAuthExpired()
         }
+
         return Promise.reject(error)
     }
 )
