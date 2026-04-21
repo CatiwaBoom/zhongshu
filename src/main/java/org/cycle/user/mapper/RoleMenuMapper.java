@@ -15,7 +15,7 @@ public interface RoleMenuMapper extends BaseMapper<RoleMenuEntity> {
     @Delete("DELETE FROM SYS_ROLE_MENU WHERE ROLE_ID = #{roleId}")
     int deleteByRoleId(@Param("roleId") String roleId);
 
-    // batch insert using MyBatis foreach in XML is better, but we can provide a simple insert for single record and call in loop
+    // 批量插入通常使用 MyBatis 的 foreach 在 XML 中实现更高效；当前提供单条插入方法，调用方可在循环中调用以实现批量逻辑
     @Insert("INSERT INTO SYS_ROLE_MENU (ID, ROLE_ID, MENU_ID, CREATED_AT) VALUES (#{id}, #{roleId}, #{menuId}, CURRENT_TIMESTAMP)")
     int insertOne(RoleMenuEntity entity);
 }

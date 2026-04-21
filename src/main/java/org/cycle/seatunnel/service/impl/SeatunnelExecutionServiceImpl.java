@@ -140,7 +140,7 @@ public class SeatunnelExecutionServiceImpl extends ServiceImpl<SeatunnelExecutio
                 update.setSeatunnelJobId(jobId);
                 updateById(update);
             } else {
-                markFailed(executionId, "seatunnel exited with code " + exit, jobId);
+                markFailed(executionId, "seatunnel 退出，退出码 " + exit, jobId);
                 SeatunnelExecutionEntity update = new SeatunnelExecutionEntity();
                 update.setId(executionId);
                 update.setExitCode(exit);
@@ -149,12 +149,12 @@ public class SeatunnelExecutionServiceImpl extends ServiceImpl<SeatunnelExecutio
                 updateById(update);
             }
         } catch (Exception e) {
-            markFailed(executionId, safeTrim(e.getMessage()).isEmpty() ? "run failed" : e.getMessage(), null);
+            markFailed(executionId, safeTrim(e.getMessage()).isEmpty() ? "运行失败" : e.getMessage(), null);
             SeatunnelExecutionEntity update = new SeatunnelExecutionEntity();
             update.setId(executionId);
             update.setFinishedAt(Timestamp.from(Instant.now()));
             updateById(update);
-            log.error("SeaTunnel run failed, executionId={}", executionId, e);
+            log.error("SeaTunnel 运行失败，executionId={}", executionId, e);
         } finally {
             if (process != null) {
                 runningProcess.remove(executionId);
@@ -228,12 +228,12 @@ public class SeatunnelExecutionServiceImpl extends ServiceImpl<SeatunnelExecutio
                 Thread.sleep(2000);
             }
         } catch (Exception e) {
-            markFailed(executionId, safeTrim(e.getMessage()).isEmpty() ? "submit failed" : e.getMessage(), null);
+            markFailed(executionId, safeTrim(e.getMessage()).isEmpty() ? "提交失败" : e.getMessage(), null);
             SeatunnelExecutionEntity finish = new SeatunnelExecutionEntity();
             finish.setId(executionId);
             finish.setFinishedAt(Timestamp.from(Instant.now()));
             updateById(finish);
-            log.error("SeaTunnel cluster submit failed, executionId={}", executionId, e);
+            log.error("提交 SeaTunnel 集群任务失败，executionId={}", executionId, e);
         }
     }
 
@@ -288,7 +288,7 @@ public class SeatunnelExecutionServiceImpl extends ServiceImpl<SeatunnelExecutio
                     return;
                 }
             } catch (Exception e) {
-                log.warn("query cluster job status failed, executionId={}, jobId={}", executionId, jobId, e);
+                log.warn("查询集群任务状态失败，executionId={}, jobId={}", executionId, jobId, e);
             }
 
             try {
@@ -325,7 +325,7 @@ public class SeatunnelExecutionServiceImpl extends ServiceImpl<SeatunnelExecutio
                 try {
                     restClient.stopJob(jobId, false);
                 } catch (Exception e) {
-                    log.error("cancel cluster job failed, executionId={}, jobId={}", executionId, jobId, e);
+                    log.error("取消集群任务失败，executionId={}, jobId={}", executionId, jobId, e);
                 }
             }
         }

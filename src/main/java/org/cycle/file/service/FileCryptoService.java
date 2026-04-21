@@ -75,6 +75,66 @@ public class FileCryptoService {
         }
     }
 
+    /**
+     * 基于流的加密：从传入的 InputStream 读取原始数据，将加密后的字节写入到 OutputStream。
+     * 返回包含加密元数据的 EncryptionResult（包括写入的字节数 storageSize）。
+     */
+    public EncryptionResult encrypt(InputStream in, OutputStream out) throws IOException {
+        try {
+            SecretKey dek = generateDataKey();
+            byte[] fileIv = randomBytes(IV_LENGTH);
+            byte[] wrapIv = randomBytes(IV_LENGTH);
+            byte[] wrappedDek = encryptBytes(dek.getEncoded(), masterKey, wrapIv);
+
+            CountingOutputStream countingOut = new CountingOutputStream(out);
+            try (CipherOutputStream cipherOut = new CipherOutputStream(countingOut, initCipher(Cipher.ENCRYPT_MODE, dek, fileIv))) {
+                byte[] buffer = new byte[8192];
+                int len;
+                while ((len = in.read(buffer)) > 0) {
+                    cipherOut.write(buffer, 0, len);
+                }
+            }
+
+            EncryptionResult result = new EncryptionResult();
+            result.setAlgorithm(AES_GCM);
+            result.setCipherIv(Base64.getEncoder().encodeToString(fileIv));
+            result.setWrapIv(Base64.getEncoder().encodeToString(wrapIv));
+            result.setWrappedDek(Base64.getEncoder().encodeToString(wrappedDek));
+            result.setStorageSize(countingOut.getCount());
+            return result;
+        } catch (GeneralSecurityException e) {
+            throw new IllegalStateException("文件加密失败", e);
+        }
+    }
+
+    /**
+     * 基于流的解密：从传入的加密数据 InputStream 读取，解密后写入到指定的 OutputStream。
+     */
+    public void decrypt(InputStream encryptedIn,
+                        String cipherIvBase64,
+                        String wrapIvBase64,
+                        String wrappedDekBase64,
+                        OutputStream out) throws IOException {
+        try {
+            byte[] cipherIv = Base64.getDecoder().decode(cipherIvBase64);
+            byte[] wrapIv = Base64.getDecoder().decode(wrapIvBase64);
+            byte[] wrappedDek = Base64.getDecoder().decode(wrappedDekBase64);
+
+            byte[] dekBytes = decryptBytes(wrappedDek, masterKey, wrapIv);
+            SecretKey dek = new SecretKeySpec(dekBytes, AES_ALGORITHM);
+
+            try (CipherInputStream cipherIn = new CipherInputStream(encryptedIn, initCipher(Cipher.DECRYPT_MODE, dek, cipherIv))) {
+                byte[] buffer = new byte[8192];
+                int len;
+                while ((len = cipherIn.read(buffer)) > 0) {
+                    out.write(buffer, 0, len);
+                }
+            }
+        } catch (GeneralSecurityException e) {
+            throw new IllegalStateException("文件解密失败", e);
+        }
+    }
+
     public void decryptToStream(Path encryptedFile,
                                 String cipherIvBase64,
                                 String wrapIvBase64,
@@ -127,6 +187,33 @@ public class FileCryptoService {
         byte[] bytes = new byte[length];
         new SecureRandom().nextBytes(bytes);
         return bytes;
+    }
+
+    /**
+     * Simple CountingOutputStream to measure bytes written.
+     */
+    private static class CountingOutputStream extends java.io.FilterOutputStream {
+        private long count = 0;
+
+        CountingOutputStream(OutputStream out) {
+            super(out);
+        }
+
+        @Override
+        public void write(int b) throws IOException {
+            out.write(b);
+            count++;
+        }
+
+        @Override
+        public void write(byte[] b, int off, int len) throws IOException {
+            out.write(b, off, len);
+            count += len;
+        }
+
+        long getCount() {
+            return count;
+        }
     }
 
     @Data

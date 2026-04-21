@@ -131,7 +131,7 @@ public class AuthController {
     @Autowired
     private UserMapper userMapper;
 
-    // inject RoleMapper to load roles for token creation
+    // 注入 RoleMapper 用于在生成 token 时加载角色信息
     @Autowired
     private RoleMapper roleMapper;
 

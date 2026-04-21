@@ -41,7 +41,7 @@ public class RedisSessionService extends SessionService {
     // 访问令牌过期时间（秒）——从配置中注入，与 JwtTokenProvider 保持一致
     @Value("${security.jwt.expire-seconds:3600}")
     private long accessTokenSeconds;
-    private static final long REFRESH_TOKEN_SECONDS = 7 * 24 * 3600; // 7 days
+    private static final long REFRESH_TOKEN_SECONDS = 7 * 24 * 3600; // 7 天（刷新令牌有效期）
 
     @Override
     @Transactional

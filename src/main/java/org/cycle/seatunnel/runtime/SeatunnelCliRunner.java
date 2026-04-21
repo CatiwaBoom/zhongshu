@@ -78,7 +78,7 @@ public class SeatunnelCliRunner {
         pb.redirectOutput(ProcessBuilder.Redirect.appendTo(logFile));
         pb.environment().put("SEATUNNEL_HOME", home);
 
-        log.info("Start SeaTunnel, execMode={}, clusterName={}, configPath={}, logPath={}", mode, cnMask(cn), configPath, logPath);
+        log.info("启动 SeaTunnel，执行模式={}, 集群名称={}, 配置路径={}, 日志路径={}", mode, cnMask(cn), configPath, logPath);
         return pb.start();
     }
 

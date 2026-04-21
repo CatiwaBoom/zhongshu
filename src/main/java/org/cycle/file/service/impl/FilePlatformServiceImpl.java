@@ -5,7 +5,6 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.cycle.file.config.FileStorageProperties;
 import org.cycle.file.dto.CompleteUploadRequest;
 import org.cycle.file.dto.FileObjectVO;
 import org.cycle.file.dto.InitUploadRequest;
@@ -18,6 +17,7 @@ import org.cycle.file.mapper.FileChunkMapper;
 import org.cycle.file.mapper.FileObjectMapper;
 import org.cycle.file.mapper.FileUploadSessionMapper;
 import org.cycle.file.service.FileCryptoService;
+import org.cycle.file.service.storage.StorageService;
 import org.cycle.file.service.FilePlatformService;
 import org.cycle.file.util.FileHashUtils;
 import org.springframework.stereotype.Service;
@@ -43,8 +43,21 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
+/**
+ * 文件存储服务实现（支持分片上传、合并、加密后存储到对象存储如 MinIO、以及解密下载与删除）。
+ *
+ * 主要职责：
+ *  - 管理上传会话（sys_file_upload_session）和分片元数据（sys_file_chunk）
+ *  - 接收分片并以流式方式上传到对象存储（不在本地保留分片副本）
+ *  - 合并分片（从对象存储逐个下载分片流写入合并临时文件），校验 MD5 后加密并上传最终对象到对象存储
+ *  - 在数据库中记录文件对象元信息（sys_file_object）：包括加密算法、cipherIv、wrappedDek、storagePath（minio://...）等
+ *  - 提供按 id 下载（解密后直写 HTTP 响应流）和物理删除（删除对象存储内对象并清理 DB）功能
+ *
+ * 设计要点：
+ *  - 分片上传采用完全流式（MultipartFile -> InputStream -> 直接上传到对象存储），同时在上传过程中计算分片 MD5 保存到 DB
+ *  - 合并过程在服务器临时目录生成合并文件（merged.tmp），以便做 MD5 校验；合并完成并校验通过后执行加密并上传
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -58,12 +71,17 @@ public class FilePlatformServiceImpl implements FilePlatformService {
     private final FileObjectMapper fileObjectMapper;
     private final FileUploadSessionMapper uploadSessionMapper;
     private final FileChunkMapper fileChunkMapper;
-    private final FileCryptoService fileCryptoService;
-    private final FileStorageProperties storageProperties;
+    private final StorageService storageService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public InitUploadResponse initUpload(InitUploadRequest request, String userId) {
+        // 初始化上传会话：
+        // 1) 校验文件 MD5 格式
+        // 2) 如果已有相同 MD5 的文件对象，增加上传计数并创建一个已完成的会话（instant upload）返回
+        // 3) 否则查找是否已有未完成的会话可续传；否则创建新会话并返回已上传分片索引列表（支持断点续传）
+
+        // 说明：该方法会在数据库中插入或查询 upload session（sys_file_upload_session）表
         String md5 = normalizeMd5(request.getFileMd5());
         validateMd5(md5);
 
@@ -107,6 +125,13 @@ public class FilePlatformServiceImpl implements FilePlatformService {
                             Integer totalChunks,
                             MultipartFile chunkFile,
                             String userId) throws IOException {
+        // 分片上传（流式）：
+        // - 参数校验（uploadId、chunkIndex、chunkFile）
+        // - 校验分片对应的上传会话信息（md5 / totalChunks 等一致性检查）
+        // - 如果分片已存在（DB 中记录），则直接返回（幂等）
+        // - 从 MultipartFile 获取 InputStream，并直接调用 storageService.uploadRaw 将分片流上传到对象存储
+        //   同时在上传过程中计算分片 MD5（storageService.uploadRaw 返回 MD5），避免在服务器上保存分片临时文件
+        // - 将分片元信息写入 sys_file_chunk 表，并更新上传会话的 uploaded_chunks 计数与状态
         if (!StringUtils.hasText(uploadId)) {
             throw new IllegalArgumentException("uploadId 不能为空");
         }
@@ -139,16 +164,20 @@ public class FilePlatformServiceImpl implements FilePlatformService {
             return;
         }
 
-        Path chunkPath = chunkFilePath(uploadId, chunkIndex);
-        Files.createDirectories(chunkPath.getParent());
-        chunkFile.transferTo(chunkPath.toFile());
+        // stream uploaded chunk directly to object storage and compute md5 during streaming
+        long size = chunkFile.getSize();
+        String chunkObject = chunkObjectName(uploadId, chunkIndex);
+        String chunkMd5;
+        try (java.io.InputStream in = chunkFile.getInputStream()) {
+            chunkMd5 = storageService.uploadRaw(in, chunkObject, size);
+        }
 
         FileChunkEntity chunkEntity = new FileChunkEntity();
         chunkEntity.setId(uuid());
         chunkEntity.setUploadId(uploadId);
         chunkEntity.setChunkIndex(chunkIndex);
-        chunkEntity.setChunkSize(Files.size(chunkPath));
-        chunkEntity.setChunkMd5(FileHashUtils.md5(chunkPath));
+        chunkEntity.setChunkSize(size);
+        chunkEntity.setChunkMd5(chunkMd5);
         chunkEntity.setCreatedBy(userId);
         chunkEntity.setUpdatedBy(userId);
         fileChunkMapper.insert(chunkEntity);
@@ -166,6 +195,16 @@ public class FilePlatformServiceImpl implements FilePlatformService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public FileObjectVO completeUpload(CompleteUploadRequest request, String userId) throws IOException {
+        // 完成上传 / 合并逻辑：
+        // - 校验会话与 MD5
+        // - 若会话已关联到已有对象（fileObjectId 不为空），直接返回该对象信息
+        // - 查询所有分片元数据并确认数量与总分片数一致
+        // - 按分片顺序从对象存储逐个下载分片流写入本地合并临时文件（merged.tmp）
+        // - 对合并后的文件计算 MD5 与客户端传入值比对，若不一致则标记会话为失败并抛错
+        // - 若已有相同 MD5 的对象（去重），则增加该对象的上传计数并将会话标记为已完成
+        // - 否则：对合并文件进行加密（生成 DEK 并使用主密钥 wrap），将加密文件上传到对象存储（使用 multipart 优化）
+        // - 在 sys_file_object 中写入对象记录（包含存储路径 storagePath、加密元数据等），并标记会话为完成
+        // - 清理合并过程中的临时文件并删除对象存储中的分片对象与对应的分片 DB 记录
         String md5 = normalizeMd5(request.getFileMd5());
         validateMd5(md5);
 
@@ -208,9 +247,16 @@ public class FilePlatformServiceImpl implements FilePlatformService {
 
         String objectId = uuid();
         String ext = fileExt(session.getFileName());
-        Path encryptedPath = objectPath(objectId, ext);
+        String objectName = objectRelativePath(objectId, ext);
 
-        FileCryptoService.EncryptionResult encryptionResult = fileCryptoService.encrypt(mergedFile, encryptedPath);
+        // upload encrypted content to storage (MinIO)
+        FileCryptoService.EncryptionResult encryptionResult;
+        String storagePath;
+        try (java.io.InputStream in = Files.newInputStream(mergedFile)) {
+            StorageService.UploadResult uploadResult = storageService.uploadEncrypted(in, objectName);
+            encryptionResult = uploadResult.getEncryptionResult();
+            storagePath = uploadResult.getStoragePath();
+        }
 
         FileObjectEntity objectEntity = new FileObjectEntity();
         objectEntity.setId(objectId);
@@ -220,7 +266,7 @@ public class FilePlatformServiceImpl implements FilePlatformService {
         objectEntity.setFileSize(session.getFileSize());
         objectEntity.setChunkSize(session.getChunkSize());
         objectEntity.setTotalChunks(session.getTotalChunks());
-        objectEntity.setStoragePath(encryptedPath.toString());
+        objectEntity.setStoragePath(storagePath);
         objectEntity.setStorageSize(encryptionResult.getStorageSize());
         objectEntity.setEncryptAlgorithm(encryptionResult.getAlgorithm());
         objectEntity.setCipherIv(encryptionResult.getCipherIv());
@@ -305,19 +351,15 @@ public class FilePlatformServiceImpl implements FilePlatformService {
             throw new IllegalArgumentException("文件不存在");
         }
 
-        Path encryptedPath = Paths.get(objectEntity.getStoragePath());
-        if (!Files.exists(encryptedPath)) {
-            throw new IllegalStateException("文件存储路径不存在");
-        }
-
         String fileName = objectEntity.getFileName();
         String encodedName = URLEncoder.encode(fileName, "UTF-8").replace("+", "%20");
         response.setCharacterEncoding("UTF-8");
         response.setContentType(StringUtils.hasText(objectEntity.getContentType()) ? objectEntity.getContentType() : "application/octet-stream");
         response.setHeader("Content-Disposition", "attachment; filename*=UTF-8''" + encodedName);
 
-        fileCryptoService.decryptToStream(
-                encryptedPath,
+        // use storage service to download and decrypt directly to response output
+        storageService.downloadDecrypted(
+                objectEntity.getStoragePath(),
                 objectEntity.getCipherIv(),
                 objectEntity.getWrapIv(),
                 objectEntity.getWrappedDek(),
@@ -333,10 +375,9 @@ public class FilePlatformServiceImpl implements FilePlatformService {
             throw new IllegalArgumentException("文件不存在");
         }
 
-        // 删除存储文件
-        Path encryptedPath = Paths.get(object.getStoragePath());
+        // 删除存储文件（MinIO）
         try {
-            if (Files.exists(encryptedPath)) Files.delete(encryptedPath);
+            storageService.delete(object.getStoragePath());
         } catch (IOException e) {
             throw new IOException("删除存储文件失败", e);
         }
@@ -439,6 +480,8 @@ public class FilePlatformServiceImpl implements FilePlatformService {
     }
 
     private void mergeChunks(String uploadId, List<FileChunkEntity> chunks, Path mergedFile) throws IOException {
+        // 合并分片：从对象存储下载每个分片流并顺序写入到 mergedFile
+        // 注意：此方法在合并前已确保 chunks 列表按 chunk_index 升序排列
         Files.createDirectories(mergedFile.getParent());
         if (Files.exists(mergedFile)) {
             Files.delete(mergedFile);
@@ -446,32 +489,42 @@ public class FilePlatformServiceImpl implements FilePlatformService {
 
         try (java.io.OutputStream out = Files.newOutputStream(mergedFile, StandardOpenOption.CREATE_NEW)) {
             for (FileChunkEntity chunk : chunks) {
-                Path chunkPath = chunkFilePath(uploadId, chunk.getChunkIndex());
-                if (!Files.exists(chunkPath)) {
-                    throw new IllegalStateException("缺少分片文件: " + chunk.getChunkIndex());
+                String chunkObject = chunkObjectName(uploadId, chunk.getChunkIndex());
+                // 从对象存储获取分片流并写入合并输出流
+                try (java.io.InputStream in = storageService.downloadRaw(chunkObject)) {
+                    if (in == null) {
+                        throw new IllegalStateException("缺少分片文件: " + chunk.getChunkIndex());
+                    }
+                    byte[] buffer = new byte[8192];
+                    int len;
+                    while ((len = in.read(buffer)) > 0) {
+                        out.write(buffer, 0, len);
+                    }
                 }
-                Files.copy(chunkPath, out);
             }
         }
     }
 
     private void cleanupUploadWorkspace(String uploadId, Path mergedFile) {
         try {
+            // 删除本地合并临时文件（如果存在）
             if (Files.exists(mergedFile)) {
                 Files.delete(mergedFile);
             }
-            Path chunkDir = chunkRootPath().resolve(uploadId);
-            if (Files.exists(chunkDir)) {
-                try (Stream<Path> stream = Files.walk(chunkDir)) {
-                    stream.sorted(Comparator.reverseOrder())
-                            .forEach(path -> {
-                                try {
-                                    Files.delete(path);
-                                } catch (IOException ignored) {
-                                }
-                            });
+
+            // 删除 MinIO 上的分片对象，并清理分片元数据表
+            List<FileChunkEntity> chunks = queryChunkEntities(uploadId);
+            for (FileChunkEntity chunk : chunks) {
+                String chunkObject = chunkObjectName(uploadId, chunk.getChunkIndex());
+                try {
+                    storageService.delete(chunkObject);
+                } catch (IOException ignored) {
                 }
             }
+            // 从 DB 中删除该上传会话相关的分片记录，避免数据积累
+            com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<FileChunkEntity> qw = new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<>();
+            qw.eq("upload_id", uploadId);
+            fileChunkMapper.delete(qw);
         } catch (IOException e) {
             log.warn("清理上传临时目录失败, uploadId={}", uploadId, e);
         }
@@ -490,26 +543,21 @@ public class FilePlatformServiceImpl implements FilePlatformService {
         }
     }
 
-    private Path chunkRootPath() {
-        return Paths.get(storageProperties.getWorkspace()).resolve(storageProperties.getChunkDir());
-    }
-
-    private Path objectRootPath() {
-        return Paths.get(storageProperties.getWorkspace()).resolve(storageProperties.getObjectDir());
-    }
-
-    private Path chunkFilePath(String uploadId, Integer chunkIndex) {
-        return chunkRootPath().resolve(uploadId).resolve(chunkIndex + ".part");
-    }
-
     private Path mergedFilePath(String uploadId) {
-        return chunkRootPath().resolve(uploadId).resolve("merged.tmp");
+        // 使用系统临时目录作为合并时的临时文件位置，避免依赖已移除的本地存储配置
+        String tmp = System.getProperty("java.io.tmpdir");
+        Path dir = Paths.get(tmp).resolve("dataSpace").resolve(uploadId);
+        return dir.resolve("merged.tmp");
     }
 
-    private Path objectPath(String fileId, String ext) {
+    private String objectRelativePath(String fileId, String ext) {
         String month = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMM"));
         String normalizedExt = StringUtils.hasText(ext) ? ext : "bin";
-        return objectRootPath().resolve(month).resolve(fileId + "." + normalizedExt);
+        return month + "/" + fileId + "." + normalizedExt;
+    }
+
+    private String chunkObjectName(String uploadId, Integer chunkIndex) {
+        return "chunks/" + uploadId + "/" + chunkIndex + ".part";
     }
 
     private String fileExt(String fileName) {

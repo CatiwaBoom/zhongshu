@@ -15,7 +15,7 @@ public interface RoleMapper extends BaseMapper<RoleEntity> {
 	@Select("SELECT r.* FROM SYS_ROLE r JOIN SYS_USER_ROLE ur ON r.ID = ur.ROLE_ID WHERE ur.USER_ID = #{userId}")
 	List<RoleEntity> selectRolesByUserId(String userId);
 
-	// 更轻量的方法：只查询角色 code 字段，减少数据传输与映射开销
+	// 只查询角色编码字段（code），减少数据传输与映射开销
 	@Select("SELECT r.code FROM SYS_ROLE r JOIN SYS_USER_ROLE ur ON r.ID = ur.ROLE_ID WHERE ur.USER_ID = #{userId}")
 	List<String> selectRoleCodesByUserId(String userId);
 
