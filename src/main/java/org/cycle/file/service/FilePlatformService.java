@@ -2,6 +2,7 @@ package org.cycle.file.service;
 
 import org.cycle.file.dto.CompleteUploadRequest;
 import org.cycle.file.dto.FileObjectVO;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.cycle.file.dto.InitUploadRequest;
 import org.cycle.file.dto.InitUploadResponse;
 import org.cycle.file.dto.UploadStatusResponse;
@@ -26,7 +27,10 @@ public interface FilePlatformService {
 
     UploadStatusResponse getStatus(String uploadId);
 
-    List<FileObjectVO> listObjects(String keyword, Integer limit);
+    /**
+     * 列表（支持分页与关键字过滤）
+     */
+    Page<FileObjectVO> listObjects(String keyword, Integer page, Integer size);
 
     void downloadDecrypted(String fileId, HttpServletResponse response) throws IOException;
 

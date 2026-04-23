@@ -26,7 +26,7 @@ public class SecurityConfig {
                 .sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 .and()
                 .authorizeRequests()
-                .antMatchers("/auth/**", "/notification/stream").permitAll()
+                .antMatchers("/auth/**", "/notification/stream","/menus/stream").permitAll()
                 .anyRequest().authenticated()
                 .and()
                 .addFilterBefore(filter, UsernamePasswordAuthenticationFilter.class);

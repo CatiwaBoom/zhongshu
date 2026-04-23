@@ -6,53 +6,32 @@
     </div>
 
     <div v-else class="admin-layout">
-      <el-aside width="220px" class="sidebar">
-        <el-menu
-          :default-active="route.path"
-          class="sidebar-menu"
-          router
-        >
-          <el-menu-item index="/dashboard">
-            <el-icon><House /></el-icon>
-            <template #title>首页</template>
-          </el-menu-item>
-
-          <el-menu-item index="/datasource">
-            <el-icon><Connection /></el-icon>
-            <template #title>数据源管理</template>
-          </el-menu-item>
-
-          <el-menu-item index="/file/platform">
-            <el-icon><FolderOpened /></el-icon>
-            <template #title>文件平台</template>
-          </el-menu-item>
-
-          <el-menu-item index="/user">
-            <el-icon><User /></el-icon>
-            <template #title>用户管理</template>
-          </el-menu-item>
-
-          <el-menu-item index="/workflow/definition">
-            <el-icon><Document /></el-icon>
-            <template #title>流程定义</template>
-          </el-menu-item>
-
-          <el-menu-item index="/seatunnel/pipeline">
-            <el-icon><Operation /></el-icon>
-            <template #title>数据采集任务</template>
-          </el-menu-item>
-
-          <el-menu-item index="/seatunnel/datasync">
-            <el-icon><Sort /></el-icon>
-            <template #title>数据同步任务</template>
-          </el-menu-item>
-
-          <el-menu-item index="/notification/inbox">
-            <el-icon><MessageBox /></el-icon>
-            <template #title>站内信收件箱</template>
-          </el-menu-item>
-        </el-menu>
-      </el-aside>
+        <el-aside width="220px" class="sidebar">
+          <el-menu :default-active="route.path" class="sidebar-menu" router>
+            <!-- 动态渲染菜单，menuList 由权限 store 提供 -->
+            <template v-if="menuList && menuList.length">
+              <template v-for="item in menuList" :key="item.id">
+                <el-sub-menu v-if="item.children && item.children.length" :index="item.path || item.id">
+                  <template #title>
+                    <el-icon v-if="item.icon">
+                      <!-- 渲染图标（若后端返回名称） -->
+                      <component :is="iconsMap[item.icon] || Document" />
+                    </el-icon>
+                    <span>{{ item.title }}</span>
+                  </template>
+                  <el-menu-item v-for="c in item.children" :key="c.id" :index="c.path || c.id">
+                    <el-icon v-if="c.icon"><component :is="iconsMap[c.icon] || Document" /></el-icon>
+                    <template #title>{{ c.title }}</template>
+                  </el-menu-item>
+                </el-sub-menu>
+                <el-menu-item v-else :index="item.path || item.id">
+                  <el-icon v-if="item.icon"><component :is="iconsMap[item.icon] || Document" /></el-icon>
+                  <template #title>{{ item.title }}</template>
+                </el-menu-item>
+              </template>
+            </template>
+          </el-menu>
+        </el-aside>
 
       <el-container>
         <el-header class="header">
@@ -105,7 +84,40 @@
               </div>
             </el-popover>
 
-            <el-button type="text" @click="logout">退出登录</el-button>
+            <!-- 当前登录用户展示：头像预留位 + 显示名称（点击显示下拉菜单，类似 GitHub 右上角） -->
+            <el-popover v-model:visible="userMenuVisible" placement="bottom-end" trigger="click" width="220">
+              <template #reference>
+                <div class="user-info" title="当前用户" role="button" tabindex="0">
+                  <el-avatar class="user-avatar" size="34">
+                    <template #default>
+                      {{ initials }}
+                    </template>
+                  </el-avatar>
+                  <span class="user-name">{{ displayName || '未登录' }}</span>
+                </div>
+              </template>
+
+              <div class="user-menu-panel">
+                <div class="user-menu-header">
+                  <el-avatar size="40" class="user-avatar drawer-avatar">
+                    <template #default>{{ initials }}</template>
+                  </el-avatar>
+                  <div class="user-menu-info">
+                    <div class="menu-name">{{ displayName || '未登录' }}</div>
+                    <div class="menu-username">{{ username || '' }}</div>
+                  </div>
+                </div>
+                <el-divider />
+                <div class="user-menu-actions">
+                  <el-button type="text" @click="onMenuCommand('profile')">个人资料</el-button>
+                  <el-button type="text" @click="onMenuCommand('settings')">设置</el-button>
+                </div>
+                <el-divider />
+                <div class="user-menu-logout">
+                  <el-button type="text" style="color:#f56c6c" @click="onMenuCommand('logout')">退出登录</el-button>
+                </div>
+              </div>
+            </el-popover>
           </div>
         </el-header>
 
@@ -115,6 +127,8 @@
           </div>
         </el-main>
       </el-container>
+
+      <!-- 用户菜单（右上角小型下拉，类似 GitHub） -->
     </div>
   </div>
 </template>
@@ -122,16 +136,78 @@
 <script setup>
 import { House, Connection, FolderOpened, User, Document, Operation, Sort, Message, MessageBox } from '@element-plus/icons-vue'
 import { useRoute, useRouter } from 'vue-router'
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useNotificationStore } from '@/stores/notification'
+import { usePermissionStore } from '@/stores/permission'
 
 const router = useRouter()
 const route = useRoute()
-const isFullScreen = computed(() => route.name === 'WorkflowDesigner')
+// 简单的图标映射：后端可以返回 icon 字段（如 'Document'），这里尝试匹配到导入的图标组件
+const iconsMap = {
+  House,
+  Connection,
+  FolderOpened,
+  User,
+  Document,
+  Operation,
+  Sort,
+  Message,
+  MessageBox
+}
+// 全屏页面判断：工作流设计器及创建/编辑数据模型页面需使用全屏布局，隐藏侧栏与头部
+// 同时支持路由名称和路径匹配，避免路由 name 未生效时无法切换到全屏
+const isFullScreen = computed(() => {
+  const name = route.name
+  const path = route.path || ''
+  if (name === 'WorkflowDesigner' || name === 'DataModelCreate' || name === 'DataModelEdit') return true
+  // 匹配 /models/create 或 /models/:id/edit（支持 id 为任意字符串）
+  if (path === '/models/create') return true
+  if (/^\/models\/[^\/]+\/edit/.test(path)) return true
+  return false
+})
+
+// 当进入全屏页面时，隐藏 body 滚动（避免出现底部滚动条）；离开时恢复
+watch(isFullScreen, (v) => {
+  try {
+    document.body.style.overflow = v ? 'hidden' : ''
+  } catch (e) {
+    // ignore
+  }
+})
 const notificationStore = useNotificationStore()
 const noticeList = computed(() => notificationStore.latestList)
 const noticeVisible = ref(false)
+const permissionStore = usePermissionStore()
+
+// 当前登录用户展示：优先使用后端返回的 currentUser（在登录时已存入 localStorage），向后兼容单独的 displayName/username 字段
+const getCurrentUser = () => {
+  try {
+    const raw = localStorage.getItem('currentUser')
+    if (raw) return JSON.parse(raw)
+  } catch (e) {}
+  return null
+}
+
+const _cur = getCurrentUser()
+const displayName = ref((_cur && _cur.displayName) || localStorage.getItem('displayName') || '')
+const username = ref((_cur && _cur.username) || localStorage.getItem('username') || '')
+const initials = computed(() => {
+  const s = (displayName.value || '').toString().trim()
+  return s ? s[0].toUpperCase() : ''
+})
+
+const onStorage = (e) => {
+  if (!e) return
+  if (e.key === 'currentUser' || e.key === 'displayName' || e.key === 'username') {
+    const u = getCurrentUser()
+    displayName.value = (u && u.displayName) || localStorage.getItem('displayName') || ''
+    username.value = (u && u.username) || localStorage.getItem('username') || ''
+  }
+}
+
+// menuList 直接使用 permissionStore.menuTree（权限 store 已在服务端/本地基于角色与 isSuper 做好过滤）
+const menuList = computed(() => permissionStore.menuTree || [])
 
 const formatTime = (value) => {
   if (!value) return '-'
@@ -167,17 +243,43 @@ const logout = () => {
   localStorage.removeItem('refreshToken')
   localStorage.removeItem('sessionId')
   localStorage.removeItem('lastActivity')
+    try { localStorage.removeItem('currentUser') } catch (e) {}
+  // 清理菜单/用户信息
+  try { permissionStore.reset() } catch (e) {}
   router.push('/login')
 }
 
 onMounted(() => {
   // 站内信入口放在全局布局中初始化，确保进入系统后就开始接收实时推送
   notificationStore.init()
+  // 监听 localStorage 更新（例如登录页面写入 displayName）
+  try { window.addEventListener('storage', onStorage) } catch (e) {}
 })
 
 onBeforeUnmount(() => {
   notificationStore.stop()
+  try { document.body.style.overflow = '' } catch (e) {}
+  try { window.removeEventListener('storage', onStorage) } catch (e) {}
 })
+
+// 用户菜单显示控制（顶部小菜单）
+const userMenuVisible = ref(false)
+
+const onMenuCommand = (cmd) => {
+  userMenuVisible.value = false
+  if (cmd === 'logout') {
+    logout()
+    return
+  }
+  if (cmd === 'profile') {
+    router.push('/profile').catch(() => {})
+    return
+  }
+  if (cmd === 'settings') {
+    router.push('/settings').catch(() => {})
+    return
+  }
+}
 </script>
 
 <style scoped lang="scss">
@@ -339,8 +441,66 @@ onBeforeUnmount(() => {
 }
 
 .full-screen-wrapper {
-  height: 100vh;
+  position: fixed;
+  inset: 0; /* top/right/bottom/left = 0 */
   width: 100%;
+  height: 100%;
   background: #fff;
+  overflow: hidden; /* 由全屏子元素内部控制滚动 */
 }
+
+/* 用户信息区域（header 右上角） */
+.user-info {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #303133;
+}
+
+.user-avatar {
+  background: linear-gradient(135deg, #409eff 0%, #66b1ff 100%);
+  color: #fff;
+  font-weight: 600;
+}
+
+.user-name {
+  font-size: 14px;
+  color: #303133;
+  max-width: 160px;
+  display: inline-block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 抽屉内用户面板样式 */
+.drawer-user-panel {
+  padding: 16px;
+}
+.drawer-header {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding-bottom: 12px;
+}
+.drawer-user-info {
+  display: flex;
+  flex-direction: column;
+}
+.drawer-name {
+  font-weight: 700;
+  font-size: 16px;
+}
+.drawer-username {
+  color: #909399;
+  margin-top: 4px;
+}
+.drawer-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 12px;
+  justify-content: flex-end;
+}
+
+.user-info { cursor: pointer; }
 </style>

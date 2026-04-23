@@ -27,16 +27,13 @@ public class NotificationRedisSubscriber {
         RedisMessageListenerContainer container = new RedisMessageListenerContainer();
         container.setConnectionFactory(connectionFactory);
 
-        MessageListener listener = new MessageListener() {
-            @Override
-            public void onMessage(Message message, byte[] pattern) {
-                try {
-                    String payload = new String(message.getBody());
-                    NotificationPushEvent event = objectMapper.readValue(payload, NotificationPushEvent.class);
-                    notificationRealtimeService.push(event);
-                } catch (Exception e) {
-                    log.error("消费站内信Redis消息失败", e);
-                }
+        MessageListener listener = (message, pattern) -> {
+            try {
+                String payload = new String(message.getBody());
+                NotificationPushEvent event = objectMapper.readValue(payload, NotificationPushEvent.class);
+                notificationRealtimeService.push(event);
+            } catch (Exception e) {
+                log.error("消费站内信Redis消息失败", e);
             }
         };
 

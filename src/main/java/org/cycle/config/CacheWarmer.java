@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Component;
+import lombok.extern.slf4j.Slf4j;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -20,6 +21,7 @@ import java.util.stream.Collectors;
  * 缓存预热组件
  * 在应用启动时预加载常用的查询结果到缓存中
  */
+@Slf4j
 @Component
 public class CacheWarmer implements ApplicationRunner {
 
@@ -60,9 +62,9 @@ public class CacheWarmer implements ApplicationRunner {
             // 存储到Redis，设置过期时间15分钟
             redisTemplate.opsForValue().set(cacheKey, dtoList, 15, TimeUnit.MINUTES);
             
-            System.out.println("User list cache warmed up successfully");
+            log.info("用户列表缓存预热成功");
         } catch (Exception e) {
-            System.err.println("Failed to warm up user list cache: " + e.getMessage());
+            log.error("预热用户列表缓存失败", e);
         }
     }
 }

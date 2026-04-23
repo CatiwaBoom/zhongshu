@@ -8,22 +8,33 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class FileStorageProperties {
 
     /**
-     * 文件工作空间根目录。
-     */
-    private String workspace = "data/file-platform";
-
-    /**
-     * 分片临时目录。
-     */
-    private String chunkDir = "chunks";
-
-    /**
-     * 加密文件目录。
-     */
-    private String objectDir = "objects";
-
-    /**
      * AES 主密钥（Base64，解码后必须为32字节）。
      */
     private String masterKeyBase64 = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=";
+
+    /**
+     * MinIO 配置
+     */
+    private Minio minio = new Minio();
+
+    @Data
+    public static class Minio {
+        /** MinIO 服务地址，例如 http://127.0.0.1:9000 */
+        private String endpoint;
+
+        /** Access key */
+        private String accessKey = "admin";
+
+        /** Secret key */
+        private String secretKey = "minIO@root.123";
+
+        /** 存储桶名称 */
+        private String bucket = "data-space";
+
+        /** 是否使用 https */
+        private boolean secure = false;
+
+        /** 启动时是否自动创建桶 */
+        private boolean autoCreateBucket = true;
+    }
 }
