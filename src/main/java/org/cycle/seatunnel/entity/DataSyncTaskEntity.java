@@ -19,4 +19,8 @@ public class DataSyncTaskEntity extends BaseEntity {
     private String pipelineId;
     private Integer status;
     private String remark;
+    private String syncType; // 同步类型：BATCH/CDC
+    private String cdcMode; // CDC 模式：FULL+INCREMENTAL/INCREMENTAL
+    private String cdcStartPosition; // CDC 起始位置
+    private Integer cdcServerId; // MySQL binlog 服务器 ID
 }

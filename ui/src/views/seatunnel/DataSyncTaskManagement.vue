@@ -21,6 +21,13 @@
             {{ tablePath(row.sinkSchema, row.sinkTable) }}
           </template>
         </el-table-column>
+        <el-table-column prop="syncType" label="同步类型" width="140">
+          <template #default="{ row }">
+            <el-tag :type="row.syncType === 'CDC' ? 'primary' : 'info'" effect="light">
+              {{ row.syncType === 'CDC' ? 'CDC' : 'BATCH' }}
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="saveMode" label="写入策略" width="160" />
         <el-table-column prop="parallelism" label="并行度" width="100" />
         <el-table-column prop="status" label="状态" width="110">
@@ -33,9 +40,10 @@
         <el-table-column prop="updatedAt" label="更新时间" width="180">
           <template #default="{ row }">{{ formatTime(row.updatedAt) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="330" fixed="right">
+        <el-table-column label="操作" width="380" fixed="right">
           <template #default="{ row }">
             <el-button size="small" :icon="VideoPlay" type="primary" @click="run(row)">运行</el-button>
+            <el-button size="small" :icon="VideoPause" type="warning" @click="stopExecution(row)">停止</el-button>
             <el-button size="small" :icon="Document" @click="preview(row)">配置</el-button>
             <el-button size="small" :icon="Edit" @click="openEdit(row)">编辑</el-button>
             <el-button size="small" :icon="Delete" type="danger" plain @click="remove(row)">删除</el-button>
@@ -133,6 +141,14 @@
 
         <el-row :gutter="16">
           <el-col :span="12">
+            <el-form-item label="同步类型" prop="syncType">
+              <el-select v-model="form.syncType" placeholder="请选择同步类型">
+                <el-option label="批处理 (BATCH)" value="BATCH" />
+                <el-option label="变更捕获 (CDC)" value="CDC" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
             <el-form-item label="写入策略" prop="saveMode">
               <el-select v-model="form.saveMode" placeholder="请选择策略">
                 <el-option label="APPEND_DATA" value="APPEND_DATA" />
@@ -141,9 +157,33 @@
               </el-select>
             </el-form-item>
           </el-col>
+        </el-row>
+
+        <el-row :gutter="16">
           <el-col :span="12">
             <el-form-item label="并行度" prop="parallelism">
               <el-input-number v-model="form.parallelism" :min="1" :max="64" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="CDC 模式" prop="cdcMode" v-if="form.syncType === 'CDC'">
+              <el-select v-model="form.cdcMode" placeholder="请选择 CDC 模式">
+                <el-option label="全量+增量" value="FULL+INCREMENTAL" />
+                <el-option label="仅增量" value="INCREMENTAL" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-row :gutter="16" v-if="form.syncType === 'CDC'">
+          <el-col :span="12">
+            <el-form-item label="CDC 起始位置" prop="cdcStartPosition">
+              <el-input v-model="form.cdcStartPosition" placeholder="例如：latest 或具体的 binlog 位置" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="Binlog 服务器 ID" prop="cdcServerId">
+              <el-input-number v-model="form.cdcServerId" :min="1" :max="65535" />
             </el-form-item>
           </el-col>
         </el-row>
@@ -170,6 +210,7 @@
         <el-tag :type="statusTagType(execution.status)" effect="light">{{ execution.status || '--' }}</el-tag>
         <span class="run-text">ExecutionId：{{ execution.id || '--' }}</span>
         <span class="run-text">ExitCode：{{ execution.exitCode ?? '--' }}</span>
+        <el-button v-if="execution.status === 'RUNNING'" size="small" :icon="VideoPause" type="warning" @click="stopExecutionById(execution.id)">停止任务</el-button>
       </div>
       <el-input v-model="runLog" type="textarea" :rows="20" readonly />
     </el-dialog>
@@ -179,7 +220,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, RefreshRight, Edit, Delete, VideoPlay, Document } from '@element-plus/icons-vue'
+import { Plus, RefreshRight, Edit, Delete, VideoPlay, VideoPause, Document } from '@element-plus/icons-vue'
 import { getDataSourceList } from '@/api/dataSource'
 import { getSchemas, getTables } from '@/api/dataSourceMeta'
 import {
@@ -190,7 +231,7 @@ import {
   previewDataSyncConfig,
   runDataSyncTask
 } from '@/api/dataSync'
-import { getSeatunnelExecution, getSeatunnelExecutionLog } from '@/api/seatunnel'
+import { getSeatunnelExecution, getSeatunnelExecutionLog, stopSeatunnelExecution } from '@/api/seatunnel'
 
 const loading = ref(false)
 const list = ref([])
@@ -222,7 +263,11 @@ const emptyForm = () => ({
   saveMode: 'APPEND_DATA',
   parallelism: 1,
   status: 1,
-  remark: ''
+  remark: '',
+  syncType: 'BATCH',
+  cdcMode: 'FULL+INCREMENTAL',
+  cdcStartPosition: 'latest',
+  cdcServerId: 5401
 })
 
 const form = reactive(emptyForm())
@@ -560,6 +605,40 @@ const run = async (row) => {
     }
   } catch (e) {
     ElMessage.error(e?.response?.data?.msg || '运行失败')
+  }
+}
+
+const stopExecutionById = async (executionId) => {
+  if (!executionId) {
+    ElMessage.warning('执行ID不能为空')
+    return
+  }
+  try {
+    const res = await stopSeatunnelExecution(executionId)
+    const result = res.data
+    if (result?.code === 200) {
+      ElMessage.success(result?.msg || '停止成功')
+      await refreshExecution()
+      stopPolling()
+    } else {
+      ElMessage.error(result?.msg || '停止失败')
+    }
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.msg || '停止失败')
+  }
+}
+
+const stopExecution = async (row) => {
+  try {
+    // 这里需要获取最新的执行记录，因为row对象可能不包含executionId
+    // 简单处理：如果当前有正在运行的执行，直接停止
+    if (execution.id && execution.status === 'RUNNING') {
+      await stopExecutionById(execution.id)
+    } else {
+      ElMessage.warning('没有正在运行的任务')
+    }
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.msg || '停止失败')
   }
 }
 

@@ -40,7 +40,8 @@ public class DataSourceServiceImpl extends ServiceImpl<DataSourceMapper, DataSou
             // 1\) 优先使用配置驱动；2\) 未配置则根据URL推断
             String resolvedDriver = !isBlank(driver) ? driver : inferDriverByUrl(url);
             if (!isBlank(resolvedDriver)) {
-                JdbcDriverLoader.loadDriver(resolvedDriver, "E:\\项目\\数据中台\\代码\\dataSpace\\drivers");
+                String driverDir = System.getProperty("jdbc.driver.dir", "E:\\zhongshu\\drivers");
+                JdbcDriverLoader.loadDriver(resolvedDriver, driverDir);
             } else {
                 log.warn("未识别到可用驱动，继续尝试由JDBC自动加载，id={}, url={}", id, maskUrl(url));
             }

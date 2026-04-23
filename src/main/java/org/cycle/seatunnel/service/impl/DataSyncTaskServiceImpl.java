@@ -6,6 +6,7 @@ import org.cycle.dataSource.entity.DataSourceEntity;
 import org.cycle.dataSource.service.DataSourceService;
 import org.cycle.seatunnel.entity.DataSyncTaskEntity;
 import org.cycle.seatunnel.entity.SeatunnelPipelineEntity;
+import org.cycle.seatunnel.generator.JdbcCdcConfigGenerator;
 import org.cycle.seatunnel.generator.JdbcToJdbcConfigGenerator;
 import org.cycle.seatunnel.mapper.DataSyncTaskMapper;
 import org.cycle.seatunnel.service.DataSyncTaskService;
@@ -19,14 +20,21 @@ public class DataSyncTaskServiceImpl extends ServiceImpl<DataSyncTaskMapper, Dat
     private final DataSourceService dataSourceService;
     private final SeatunnelPipelineService pipelineService;
 
-    private final JdbcToJdbcConfigGenerator generator = new JdbcToJdbcConfigGenerator();
+    private final JdbcToJdbcConfigGenerator batchGenerator = new JdbcToJdbcConfigGenerator();
+    private final JdbcCdcConfigGenerator cdcGenerator = new JdbcCdcConfigGenerator();
 
     @Override
     public DataSyncTaskEntity createTask(DataSyncTaskEntity task) {
         normalize(task);
         DataSourceEntity source = requireDs(task.getSourceDsId());
         DataSourceEntity sink = requireDs(task.getSinkDsId());
-        String conf = generator.generate(task, source, sink);
+        
+        String conf;
+        if ("CDC".equalsIgnoreCase(task.getSyncType())) {
+            conf = cdcGenerator.generate(task, source, sink);
+        } else {
+            conf = batchGenerator.generate(task, source, sink);
+        }
 
         SeatunnelPipelineEntity pipeline = new SeatunnelPipelineEntity();
         pipeline.setName(task.getName());
@@ -61,7 +69,13 @@ public class DataSyncTaskServiceImpl extends ServiceImpl<DataSyncTaskMapper, Dat
 
         DataSourceEntity source = requireDs(task.getSourceDsId());
         DataSourceEntity sink = requireDs(task.getSinkDsId());
-        String conf = generator.generate(task, source, sink);
+        
+        String conf;
+        if ("CDC".equalsIgnoreCase(task.getSyncType())) {
+            conf = cdcGenerator.generate(task, source, sink);
+        } else {
+            conf = batchGenerator.generate(task, source, sink);
+        }
 
         if (!pipelineId.isEmpty()) {
             SeatunnelPipelineEntity pipeline = new SeatunnelPipelineEntity();
@@ -86,7 +100,12 @@ public class DataSyncTaskServiceImpl extends ServiceImpl<DataSyncTaskMapper, Dat
         }
         DataSourceEntity source = requireDs(task.getSourceDsId());
         DataSourceEntity sink = requireDs(task.getSinkDsId());
-        return generator.generate(task, source, sink);
+        
+        if ("CDC".equalsIgnoreCase(task.getSyncType())) {
+            return cdcGenerator.generate(task, source, sink);
+        } else {
+            return batchGenerator.generate(task, source, sink);
+        }
     }
 
     @Override
@@ -101,7 +120,13 @@ public class DataSyncTaskServiceImpl extends ServiceImpl<DataSyncTaskMapper, Dat
         }
         DataSourceEntity source = requireDs(task.getSourceDsId());
         DataSourceEntity sink = requireDs(task.getSinkDsId());
-        String conf = generator.generate(task, source, sink);
+        
+        String conf;
+        if ("CDC".equalsIgnoreCase(task.getSyncType())) {
+            conf = cdcGenerator.generate(task, source, sink);
+        } else {
+            conf = batchGenerator.generate(task, source, sink);
+        }
 
         SeatunnelPipelineEntity pipeline = new SeatunnelPipelineEntity();
         pipeline.setId(pipelineId);
@@ -137,6 +162,18 @@ public class DataSyncTaskServiceImpl extends ServiceImpl<DataSyncTaskMapper, Dat
         }
         if (task.getStatus() == null) {
             task.setStatus(1);
+        }
+        if (safeTrim(task.getSyncType()).isEmpty()) {
+            task.setSyncType("BATCH");
+        }
+        if ("CDC".equalsIgnoreCase(task.getSyncType()) && safeTrim(task.getCdcMode()).isEmpty()) {
+            task.setCdcMode("FULL+INCREMENTAL");
+        }
+        if ("CDC".equalsIgnoreCase(task.getSyncType()) && task.getCdcServerId() == null) {
+            task.setCdcServerId(5401);
+        }
+        if ("CDC".equalsIgnoreCase(task.getSyncType()) && safeTrim(task.getCdcStartPosition()).isEmpty()) {
+            task.setCdcStartPosition("latest");
         }
         task.setSourceSchema(emptyToNull(task.getSourceSchema()));
         task.setSinkSchema(emptyToNull(task.getSinkSchema()));

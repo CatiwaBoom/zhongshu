@@ -48,6 +48,12 @@
             <version>${dm-jdbc.version}</version>
         </dependency>
 
+        <!-- 老版本 MySQL 5.x 驱动 -->
+        <dependency>
+            <groupId>mysql</groupId>
+            <artifactId>mysql-connector-java</artifactId>
+            <version>5.1.49</version>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
