@@ -14,7 +14,8 @@
       </div>
     </section>
 
-    <section class="list-card">
+    <div v-if="!showInterface">
+      <section class="list-card">
       <div class="list-header">
         <h2>外部系统管理</h2>
         <div class="list-total">共 {{ displayTotal }} 条</div>
@@ -41,12 +42,13 @@
                 </div>
               </div>
 
-              <div class="card-footer">
-                <el-button type="text" @click="viewItem(item)"><i class="fa fa-eye"></i> 查看</el-button>
-                <el-button type="text" @click="editItem(item)"><i class="fa fa-edit"></i> 编辑</el-button>
-                <el-button type="text" class="danger" @click="deleteItem(item)"><i class="fa fa-trash"></i> 删除</el-button>
-                <el-button type="text" @click="testStatus(item)"><i class="fa fa-plug"></i> 检测连通</el-button>
-              </div>
+                          <div class="card-footer">
+                            <el-button type="text" @click="viewItem(item)"><i class="fa fa-eye"></i> 查看</el-button>
+                            <el-button type="text" @click="editItem(item)"><i class="fa fa-edit"></i> 编辑</el-button>
+                            <el-button type="text" class="danger" @click="deleteItem(item)"><i class="fa fa-trash"></i> 删除</el-button>
+                            <el-button type="text" @click="testStatus(item)"><i class="fa fa-plug"></i> 检测连通</el-button>
+                            <el-button type="text" @click="openInterfacePage(item)"><i class="fa fa-external-link"></i> 接口管理</el-button>
+                          </div>
             </el-card>
           </el-col>
         </el-row>
@@ -129,6 +131,13 @@
       </template>
     </el-dialog>
 
+    </div>
+    <!-- 当 showInterface 为 true 时，在列表区域替换为接口管理页面（类似路由切换效果） -->
+    <div v-else class="list-card">
+      <SystemApiManagement :system="currentSystem" :inline="true" @close="showInterface=false" />
+    </div>
+
+
     <!-- 附件选择弹窗 -->
     <el-dialog v-model="attachDialogVisible" title="选择附件" width="800px">
           <div class="attach-search">
@@ -162,6 +171,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Plus } from '@element-plus/icons-vue'
 import * as api from '@/api/system.js'
 import * as fileApi from '@/api/filePlatform.js'
+import SystemApiManagement from './SystemApiManagement.vue'
 
 const loading = ref(false)
 const dialogVisible = ref(false)
@@ -175,6 +185,7 @@ const total = ref(null)
 const emptyForm = () => ({ id: '', name: '', description: '', address: '', port: null, systemCode: '', attachmentIds: [] })
 const form = reactive(emptyForm())
 const attachments = ref([]) // selected file objects metadata
+const attachTarget = ref('system') // 'system' or 'api'
 
 const rules = {
   name: [{ required: true, message: '名称不能为空', trigger: 'blur' }],
@@ -192,13 +203,16 @@ const pageStart = computed(() => (query.current - 1) * query.size + 1)
 const pageEnd = computed(() => Math.min(query.current * query.size, total.value || list.value.length))
 const displayTotal = computed(() => (total.value === null ? list.value.length : total.value))
 
+
+// ========== 接口管理入口控制（在父组件中触发，具体实现由 SystemApiManagement 组件负责） ==========
+
 // 根据实时标签或状态返回 el-tag 的类型（颜色）
 const statusTag = (label, s) => {
   // 优先使用实时检测的标签文本决定颜色
-  if (label === '运行中') return 'success' // 绿色
-  if (label === '异常') return 'danger' // 红色
-  // 回退使用数值状态：status === 1 表示启用/可能运行
-  if (s === 1) return 'success'
+  if (label === '运行中') return 'success'
+  if (label === '异常') return 'danger'
+  // 回退使用数值或布尔状态：status === 1 或 true 表示运行中
+  if (s === true) return 'success'
   return 'info'
 }
 
@@ -211,7 +225,17 @@ const loadList = async () => {
     if (data?.code === 200) {
       const payload = data.data
       if (Array.isArray(payload.records)) {
-        list.value = payload.records
+        // 后端返回的 records 里包含 boolean 型的 status（true/false），
+        // 组件期望使用 _statusLabel 显示中文标签（运行中/异常），
+        // 所以在这里把 status 映射为 _statusLabel（除非后端已提供 _statusLabel）
+        list.value = payload.records.map(item => {
+          if (item._statusLabel === undefined) {
+            if (item.status === true) item._statusLabel = '运行中'
+            else if (item.status === false) item._statusLabel = '异常'
+            else item._statusLabel = undefined
+          }
+          return item
+        })
         total.value = payload.total || payload.totalElements || payload.totalCount || list.value.length
       } else if (Array.isArray(payload)) {
         list.value = payload
@@ -229,49 +253,6 @@ const loadList = async () => {
     loading.value = false
   }
 }
-
-const openCreateDialog = () => { dialogMode.value = 'create'; Object.assign(form, emptyForm()); attachments.value = []; dialogVisible.value = true }
-const editItem = (row) => { dialogMode.value = 'edit'; Object.assign(form, emptyForm(), row); // load attachments metadata
-  if (row.attachmentIds) {
-    const ids = row.attachmentIds.split(',').map(s => s.trim()).filter(Boolean)
-    loadAttachmentsByIds(ids)
-    form.attachmentIds = ids
-  } else {
-    attachments.value = []
-    form.attachmentIds = []
-  }
-  dialogVisible.value = true
-}
-
-const viewItem = (row) => {
-  // simple view: open edit dialog in readonly mode
-  editItem(row)
-}
-
-const deleteItem = async (row) => {
-  try {
-    await ElMessageBox.confirm(`确认删除系统 ${row.name} 吗？`, '删除确认', { type: 'warning' })
-    const res = await api.deleteSystem(row.id)
-    if (res.data?.code === 200) {
-      ElMessage.success('删除成功')
-      await loadList()
-    } else ElMessage.error(res.data?.msg || '删除失败')
-  } catch (e) {
-    if (e !== 'cancel' && e !== 'close') ElMessage.error('删除失败')
-  }
-}
-
-const testStatus = async (row) => {
-  try {
-    const res = await api.checkSystemStatus(row.address, row.port)
-    if (res.data?.code === 200) {
-      const ok = res.data.data
-      row._statusLabel = ok ? '运行中' : '异常'
-      ElMessage.success(ok ? '连通' : '不通')
-    } else ElMessage.error(res.data?.msg || '检测失败')
-  } catch (e) { ElMessage.error('检测失败') }
-}
-
 const checkFormStatus = async () => {
   if (!form.address || !form.port) { ElMessage.warning('请先填写地址与端口'); return }
   try {
@@ -305,7 +286,7 @@ const handleSizeChange = (s) => { query.size = s; query.current = 1; loadList() 
 onMounted(() => { loadList() })
 
 // attachments logic
-const openAttachmentDialog = () => { attachDialogVisible.value = true; loadFileObjects() }
+const openAttachmentDialog = (target = 'system') => { attachTarget.value = target; attachDialogVisible.value = true; loadFileObjects() }
 const openFilePlatform = () => { window.open('/file/platform', '_blank') }
 
 const loadFileObjects = async () => {
@@ -322,8 +303,10 @@ const onAttachSelectionChange = (rows) => { attachSelected.value = rows }
 
 const confirmAttachSelection = () => {
   const ids = attachSelected.value.map(r => r.id)
-  form.attachmentIds = Array.from(new Set([...(form.attachmentIds || []), ...ids]))
-  loadAttachmentsByIds(form.attachmentIds)
+  if (attachTarget.value === 'system') {
+    form.attachmentIds = Array.from(new Set([...(form.attachmentIds || []), ...ids]))
+    loadAttachmentsByIds(form.attachmentIds)
+  }
   attachDialogVisible.value = false
 }
 
@@ -344,19 +327,44 @@ const removeAttachment = (id) => {
   attachments.value = attachments.value.filter(a => a.id !== id)
 }
 
-const downloadAttachment = async (id) => {
+const deleteItem = async (row) => {
   try {
-    const res = await fileApi.downloadFileObject(id)
-    const blob = res.data
-    const url = window.URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = ''
-    document.body.appendChild(a)
-    a.click()
-    a.remove()
-    window.URL.revokeObjectURL(url)
-  } catch (e) { ElMessage.error('下载失败') }
+    await ElMessageBox.confirm(`确认删除系统 ${row.name} 吗？`, '删除确认', { type: 'warning' })
+    const res = await api.deleteSystem(row.id)
+    if (res.data?.code === 200) {
+      ElMessage.success('删除成功')
+      await loadList()
+    } else ElMessage.error(res.data?.msg || '删除失败')
+  } catch (e) {
+    if (e !== 'cancel' && e !== 'close') ElMessage.error('删除失败')
+  }
+}
+
+// 新增：检测系统连通性（在列表卡片上触发）
+const testStatus = async (row) => {
+  try {
+    const res = await api.checkSystemStatus(row.address, row.port)
+    if (res.data?.code === 200) {
+      const ok = res.data.data
+      // 在 UI 上显示临时状态标签
+      row._statusLabel = ok ? '运行中' : '异常'
+      ElMessage.success(ok ? '连通' : '不通')
+    } else {
+      ElMessage.error(res.data?.msg || '检测失败')
+    }
+  } catch (e) {
+    ElMessage.error('检测失败')
+  }
+}
+
+
+// ========== 接口管理入口控制（在父组件中触发，具体实现由 SystemApiManagement 组件负责） ==========
+const showInterface = ref(false)
+const currentSystem = ref({})
+
+const openInterfacePage = (row) => {
+  currentSystem.value = row
+  showInterface.value = true
 }
 
 </script>
@@ -374,7 +382,33 @@ const downloadAttachment = async (id) => {
 .attachments-list { margin-top:8px; display:flex; gap:6px; flex-wrap:wrap }
 .muted { color:#909399 }
 .danger { color: #f56c6c }
+
+/* 覆盖式接口管理视图样式 */
+.interface-overlay {
+  position: fixed;
+  inset: 0;
+  background: #f7f8fa;
+  padding: 28px 32px;
+  z-index: 1200;
+  overflow: auto;
+}
+.interface-overlay .card-hover { box-shadow: 0 6px 20px rgba(16,93,255,0.06); }
+.interface-overlay .back-btn { position: relative; }
+.method-badge { display:inline-block }
+
+/* 覆盖视图右上角返回按钮 */
+.overlay-back {
+  position: fixed;
+  top: 18px;
+  right: 22px;
+  z-index: 1300;
+  background: white;
+  border: 1px solid #e6e6e6;
+  box-shadow: 0 6px 18px rgba(16,93,255,0.06);
+}
 </style>
+
+
 
 
 

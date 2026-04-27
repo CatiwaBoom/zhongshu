@@ -9,6 +9,7 @@ import org.cycle.file.dto.FileObjectVO;
 import org.cycle.file.entity.FileObjectEntity;
 import org.cycle.file.mapper.FileObjectMapper;
 import org.cycle.system.dto.SystemDto;
+import org.cycle.system.dto.SystemVO;
 import org.cycle.system.entity.SystemEntity;
 import org.cycle.system.service.SystemService;
 import org.springframework.validation.annotation.Validated;
@@ -87,7 +88,7 @@ public class SystemController extends BaseController {
     }
 
     @GetMapping("/list")
-    public Result<?> list(
+    public Result< Page<SystemVO> > list(
             @RequestParam(value = "keyword", required = false) String keyword,
             @RequestParam(value = "page", defaultValue = "1") Integer page,
             @RequestParam(value = "size", defaultValue = "10") Integer size
@@ -103,7 +104,29 @@ public class SystemController extends BaseController {
             int actualSize = Math.min(Math.max(1, size), maxSize);
             Page<SystemEntity> p = new Page<>(Math.max(1, page), actualSize);
             Page<SystemEntity> result = systemService.page(p, qw);
-            return success(result);
+            // Map SystemEntity -> SystemVO and fill real-time status
+            Page<SystemVO> voPage = new Page<>(result.getCurrent(), result.getSize());
+            voPage.setTotal(result.getTotal());
+            List<SystemVO> vos = result.getRecords().stream().map(ent -> {
+                SystemVO vo = new SystemVO();
+                vo.setId(ent.getId());
+                vo.setName(ent.getName());
+                vo.setDescription(ent.getDescription());
+                vo.setAddress(ent.getAddress());
+                vo.setPort(ent.getPort());
+                vo.setSystemCode(ent.getSystemCode());
+                // attachments intentionally left null here; use /{id}/attachments endpoint if needed
+                try {
+                    boolean ok = systemService.checkStatus(ent.getAddress(), ent.getPort(), 3000);
+                    vo.setStatus(ok);
+                } catch (Exception ex) {
+                    log.warn("checkStatus failed for system {}:{}", ent.getAddress(), ent.getPort(), ex);
+                    vo.setStatus(false);
+                }
+                return vo;
+            }).collect(Collectors.toList());
+            voPage.setRecords(vos);
+            return success(voPage);
         } catch (Exception e) {
             log.error("查询系统列表失败", e);
             return fail(500, "查询系统列表失败: " + e.getMessage());
