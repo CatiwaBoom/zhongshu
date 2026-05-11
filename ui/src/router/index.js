@@ -77,6 +77,12 @@ const routes = [
                 meta: { title: '角色管理', icon: 'User' }
             },
             {
+                path: 'systems',
+                name: 'SystemManagement',
+                component: () => import('@/views/system/SystemManagement.vue'),
+                meta: { title: '外部系统管理', icon: 'Document' }
+            },
+            {
                 path: 'admin/menus',
                 name: 'SystemMenuManagement',
                 component: () => import('@/views/admin/SystemMenuManagement.vue'),
